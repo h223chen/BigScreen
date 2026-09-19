@@ -22,7 +22,10 @@
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
-    <LangVersion>latest</LangVersion>
+    <!-- Pinned, not 'latest': the language version must not drift with whichever SDK a
+         contributor happens to have. 12.0 is the newest C# that SDK 8, 9 and 10 all accept,
+         and is comfortably above what this code needs (file-scoped namespaces, C# 10). -->
+    <LangVersion>12.0</LangVersion>
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
