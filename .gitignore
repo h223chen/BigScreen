@@ -1,0 +1,26 @@
+# Build output
+bin/
+obj/
+dist/
+build/
+
+# Per-machine build overrides (game path, BepInEx profile path)
+Config.Build.user.props
+
+# Loader packs / tool binaries are downloaded, never committed
+vendor/*.zip
+tools/
+*.exe
+
+# Decompiled game output (copyrighted, regenerable with Cpp2IL, enormous)
+gamesrc/
+cpp2il_out/
+*.dump
+
+# IDE / OS
+.vs/
+.idea/
+*.user
+*.suo
+Thumbs.db
+.DS_Store

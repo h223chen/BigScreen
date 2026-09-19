@@ -1,0 +1,65 @@
+name: build
+
+# Builds BigScreen.dll on every push. CI has no copy of the game, so it compiles against a
+# `build-refs.zip` (BepInEx core + generated interop assemblies) that you upload once as an
+# asset on a GitHub release tagged `build-refs`:
+#
+#   .\scripts\export-build-refs.ps1
+#   gh release create build-refs --title "Build references" --notes "Interop refs for CI"
+#   gh release upload build-refs --clobber dist\build-refs.zip
+#
+# Re-upload after every Big Walk update (interop assemblies change with the game).
+# Until that asset exists this workflow skips the build step and only checks out the repo.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      REFS_URL: https://github.com/${{ github.repository }}/releases/download/build-refs/build-refs.zip
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Download build references
+        id: refs
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $refs = Join-Path $env:GITHUB_WORKSPACE 'ci-refs'
+          New-Item -ItemType Directory -Force $refs | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP 'build-refs.zip'
+          Invoke-WebRequest -Uri $env:REFS_URL -OutFile $zip
+          Expand-Archive $zip -DestinationPath $refs -Force
+          Write-Host "refs ready at $refs"
+
+      - name: Build plugin
+        if: steps.refs.outcome == 'success'
+        shell: pwsh
+        run: |
+          $proj = Join-Path $env:GITHUB_WORKSPACE 'src/BigScreen/BigScreen.csproj'
+          dotnet build $proj -c Release -v m "/p:BepInExPath=$env:GITHUB_WORKSPACE/ci-refs"
+          if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+
+      - name: Upload artifact
+        if: steps.refs.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BigScreen
+          path: src/BigScreen/bin/Release/BigScreen.dll
+
+      - name: No build references yet
+        if: steps.refs.outcome != 'success'
+        run: echo "build-refs.zip not found on the 'build-refs' release; skipping compile. See the comment at the top of this workflow."
