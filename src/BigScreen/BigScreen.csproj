@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>BigScreen</AssemblyName>
+    <RootNamespace>BigScreen</RootNamespace>
+    <Version>0.1.0</Version>
+    <Description>A shared in-world screen for watching YouTube together in Big Walk. Everyone with the mod sees and hears the same video, in sync.</Description>
+  </PropertyGroup>
+
+  <!-- Loader assemblies (BepInEx 6 bleeding-edge, Unity.IL2CPP flavour). -->
+  <ItemGroup Label="BepInEx">
+    <Reference Include="BepInEx.Core"><HintPath>$(BepInExCore)\BepInEx.Core.dll</HintPath></Reference>
+    <Reference Include="BepInEx.Unity.IL2CPP"><HintPath>$(BepInExCore)\BepInEx.Unity.IL2CPP.dll</HintPath></Reference>
+    <Reference Include="Il2CppInterop.Runtime"><HintPath>$(BepInExCore)\Il2CppInterop.Runtime.dll</HintPath></Reference>
+    <Reference Include="Il2CppInterop.Common"><HintPath>$(BepInExCore)\Il2CppInterop.Common.dll</HintPath></Reference>
+    <Reference Include="0Harmony"><HintPath>$(BepInExCore)\0Harmony.dll</HintPath></Reference>
+  </ItemGroup>
+
+  <!-- Unity engine modules, as generated interop proxies. -->
+  <ItemGroup Label="Unity">
+    <Reference Include="Il2Cppmscorlib"><HintPath>$(Interop)\Il2Cppmscorlib.dll</HintPath></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(Interop)\UnityEngine.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(Interop)\UnityEngine.CoreModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(Interop)\UnityEngine.IMGUIModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(Interop)\UnityEngine.InputLegacyModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(Interop)\UnityEngine.PhysicsModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.AudioModule"><HintPath>$(Interop)\UnityEngine.AudioModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.VideoModule"><HintPath>$(Interop)\UnityEngine.VideoModule.dll</HintPath></Reference>
+  </ItemGroup>
+
+  <!-- Game + networking. -->
+  <ItemGroup Label="Game">
+    <Reference Include="Assembly-CSharp"><HintPath>$(Interop)\Assembly-CSharp.dll</HintPath></Reference>
+    <Reference Include="Mirror"><HintPath>$(Interop)\Mirror.dll</HintPath></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Never copy game/loader assemblies next to our DLL; BepInEx supplies them at runtime. -->
+    <Reference Update="@(Reference)"><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!-- Optional: copy the built DLL straight into the plugins folder after each build (dev loop). -->
+  <Target Name="DeployToPlugins" AfterTargets="Build" Condition="'$(DeployToProfile)' == 'true' and '$(BepInExPath)' != ''">
+    <MakeDir Directories="$(BepInExPath)\plugins\BigScreen" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(BepInExPath)\plugins\BigScreen" />
+    <Message Importance="high" Text="Deployed $(TargetFileName) -> $(BepInExPath)\plugins\BigScreen" />
+  </Target>
+
+</Project>
