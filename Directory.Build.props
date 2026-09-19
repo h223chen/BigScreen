@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <!--
+    Shared build settings for every project under this repo.
+
+    Big Walk is an IL2CPP game, so there is no managed Assembly-CSharp.dll to reference.
+    Instead we compile against the "interop" proxy assemblies that BepInEx 6 generates
+    into <BepInEx>/interop the first time the game is launched with the loader installed.
+    The loader's own assemblies (BepInEx.Core, Il2CppInterop.Runtime, 0Harmony) live in
+    <BepInEx>/core.
+
+    Resolution order for BepInExPath:
+      1. /p:BepInExPath=...  (CI passes the extracted build-refs.zip here)
+      2. Config.Build.user.props next to this file (git-ignored, per machine)
+      3. Gale profile, r2modman profile, then the game folder itself.
+  -->
+  <PropertyGroup>
+    <SolutionRoot>$(MSBuildThisFileDirectory)</SolutionRoot>
+  </PropertyGroup>
+
+  <Import Project="$(SolutionRoot)Config.Build.user.props" Condition="Exists('$(SolutionRoot)Config.Build.user.props')" />
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Deterministic>true</Deterministic>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <NoWarn>$(NoWarn);CS0649;CS0169;CS0436;CS1591</NoWarn>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <GamePath Condition="'$(GamePath)' == '' and Exists('$(MSBuildProgramFiles32)\Steam\steamapps\common\Big Walk\Big Walk.exe')">$(MSBuildProgramFiles32)\Steam\steamapps\common\Big Walk</GamePath>
+
+    <BepInExPath Condition="'$(BepInExPath)' == '' and Exists('$(APPDATA)\com.kesomannen.gale\big-walk\profiles\Default\BepInEx\interop')">$(APPDATA)\com.kesomannen.gale\big-walk\profiles\Default\BepInEx</BepInExPath>
+    <BepInExPath Condition="'$(BepInExPath)' == '' and Exists('$(APPDATA)\r2modmanPlus-local\BigWalk\profiles\Default\BepInEx\interop')">$(APPDATA)\r2modmanPlus-local\BigWalk\profiles\Default\BepInEx</BepInExPath>
+    <BepInExPath Condition="'$(BepInExPath)' == '' and '$(GamePath)' != '' and Exists('$(GamePath)\BepInEx\interop')">$(GamePath)\BepInEx</BepInExPath>
+
+    <BepInExCore>$(BepInExPath)\core</BepInExCore>
+    <Interop>$(BepInExPath)\interop</Interop>
+  </PropertyGroup>
+
+  <Target Name="BigScreenCheckReferences" BeforeTargets="CoreCompile">
+    <Error Condition="'$(BepInExPath)' == ''"
+           Text="BepInExPath is not set and no BepInEx install was found. Launch Big Walk once with BepInEx installed (this generates BepInEx\interop), then either pass /p:BepInExPath=&quot;...\BepInEx&quot; or create Config.Build.user.props (see Config.Build.user.props.template)." />
+    <Error Condition="!Exists('$(Interop)\Assembly-CSharp.dll')"
+           Text="No interop assemblies at $(Interop). Launch the game once with BepInEx installed so it generates them (first launch takes a few minutes)." />
+    <Warning Condition="!Exists('$(Interop)\UnityEngine.VideoModule.dll')"
+             Text="UnityEngine.VideoModule.dll is missing from $(Interop). Unity's VideoPlayer was stripped from this build of Big Walk - the Unity video backend cannot work. See docs/ARCHITECTURE.md, section 'Risk 1'." />
+  </Target>
+</Project>

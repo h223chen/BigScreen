@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copy this file to Config.Build.user.props (git-ignored) and fill in what the
+  auto-detection in Directory.Build.props cannot find on your machine.
+-->
+<Project>
+  <PropertyGroup>
+    <!-- Folder containing "Big Walk.exe". Only needed if Steam is not in the default location. -->
+    <!-- <GamePath>D:\SteamLibrary\steamapps\common\Big Walk</GamePath> -->
+
+    <!-- The BepInEx folder that holds core\ and interop\. For a mod-manager profile this is
+         the profile's BepInEx folder, NOT the game folder. -->
+    <!-- <BepInExPath>C:\Users\you\AppData\Roaming\r2modmanPlus-local\BigWalk\profiles\Default\BepInEx</BepInExPath> -->
+  </PropertyGroup>
+</Project>
