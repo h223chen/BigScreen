@@ -106,11 +106,6 @@ internal sealed class ControlPanel
 
     private void DrawWindow(int id)
     {
-        // Log the mouse events the window sees, so the log shows how far the click got.
-        var ev = Event.current;
-        if (ev != null && (ev.type == EventType.MouseDown || ev.type == EventType.MouseUp))
-            Plugin.Log.LogInfo($"GUI window: {ev.type} button={ev.button} at {ev.mousePosition}");
-
         try
         {
             DrawBody();
@@ -153,10 +148,7 @@ internal sealed class ControlPanel
             _c.UserPlaceScreen();
         GUI.enabled = inLobby && canControl && _c.Session.State.HasScreen;
         if (GUILayout.Button("Remove screen", _button, GUILayout.Height(ButtonHeight)))
-        {
-            Plugin.Log.LogInfo("Button: Remove screen.");
             _c.UserRemoveScreen();
-        }
         GUI.enabled = inLobby;
         if (GUILayout.Button("Set spawn here", _button, GUILayout.Height(ButtonHeight)))
             _c.UserSetSpawnHere();
@@ -178,15 +170,6 @@ internal sealed class ControlPanel
         // is fine and the bottom one still kills the game, the position matters rather than
         // the button; if both crash, it is the button.
         GUI.enabled = inLobby && canControl;
-        // Bisect step 2: this copy calls UserLoad, the bottom one does not. Clicking each in
-        // turn shows which half of the handler is fatal in a single run.
-        if (GUILayout.Button("Test MP4 (top copy - calls UserLoad)", _button, GUILayout.Height(ButtonHeight)))
-        {
-            Plugin.Log.LogInfo("Test MP4 (top copy) clicked, calling UserLoad.");
-            _c.UserLoad(TestMp4Url);
-        }
-        GUI.enabled = true;
-
         var st = session.State;
         if (!string.IsNullOrEmpty(st.VideoUrl))
         {
@@ -229,32 +212,13 @@ internal sealed class ControlPanel
         GUILayout.BeginHorizontal();
         if (GUILayout.Button("Update yt-dlp", _button, GUILayout.Width(_builtForFontSize * 10f), GUILayout.Height(ButtonHeight))) _c.UserUpdateYtDlp();
         if (GUILayout.Button("Resync", _button, GUILayout.Width(_builtForFontSize * 7f), GUILayout.Height(ButtonHeight)))
-        {
-            Plugin.Log.LogInfo("Button: Resync.");
             _c.ForceResync();
-        }
         GUI.enabled = inLobby && canControl;
-
-        // The click handler below never reaches its first log line, so the fault is at or
-        // inside this call, not in what it triggers. These two lines bracket it. Only mouse
-        // events are logged, so this stays quiet during normal drawing.
-        var ev = Event.current;
-        bool mouseEvent = ev != null && (ev.type == EventType.MouseDown || ev.type == EventType.MouseUp);
-        if (mouseEvent) Plugin.Log.LogInfo($"GUI {ev.type}: before Test MP4 button (enabled={GUI.enabled})");
-
-        bool testMp4Clicked = GUILayout.Button("Test MP4", _button,
-                                               GUILayout.Width(_builtForFontSize * 8f),
-                                               GUILayout.Height(ButtonHeight));
-
-        if (mouseEvent) Plugin.Log.LogInfo($"GUI: Test MP4 button returned {testMp4Clicked}");
-
-        // Bisect step 2: the cheap statements are back, UserLoad is still left out.
-        // Step 1 (empty body) did not crash, so the fault is somewhere in here.
-        if (testMp4Clicked)
+        if (GUILayout.Button("Test MP4", _button, GUILayout.Width(_builtForFontSize * 8f), GUILayout.Height(ButtonHeight)))
         {
-            Plugin.Log.LogInfo("Test MP4 clicked.");
+            // Loads a short MP4 with no yt-dlp involved, to check the screen on its own.
             GUIUtility.keyboardControl = 0;
-            Plugin.Log.LogInfo("Test MP4: focus cleared, UserLoad NOT called.");
+            _c.UserLoad(TestMp4Url);
         }
         GUI.enabled = true;
         GUILayout.FlexibleSpace();

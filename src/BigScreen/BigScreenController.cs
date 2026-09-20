@@ -110,20 +110,6 @@ public class BigScreenController : MonoBehaviour
     {
         if (!_panelVisible) return;
 
-        // Logged before GUI.Window is called. Clicking Test MP4 produces no output at all,
-        // not even the first line of the window callback, while every other button in the
-        // same panel logs normally. If this line is also missing for that click, the fault
-        // is above our GUI code entirely.
-        // Log every event that is not routine drawing. The narrower MouseDown/MouseUp filter
-        // never fired here even though the same check works inside the window callback, so
-        // this records whatever type actually arrives - including none, if Event.current is
-        // null at this level.
-        var ev = Event.current;
-        if (ev == null) Plugin.Log.LogInfo("OnGUI: Event.current is null");
-        else if (ev.type != EventType.Layout && ev.type != EventType.Repaint
-                 && ev.type != EventType.MouseMove && ev.type != EventType.MouseDrag)
-            Plugin.Log.LogInfo($"OnGUI: {ev.type} at {ev.mousePosition}");
-
         try
         {
             _panel.Draw();
