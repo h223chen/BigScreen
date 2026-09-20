@@ -21,6 +21,8 @@ internal sealed class ScreenObject : IDisposable
     public GameObject Root { get; private set; }
     public AudioSource Audio { get; private set; }
     public RenderTexture Texture { get; private set; }
+    /// <summary>The in-world controls beside the screen. Null when disabled or unbuildable.</summary>
+    public ControlConsole Console { get; private set; }
 
     private Material _screenMaterial;
     private GameObject _frame;
@@ -32,6 +34,9 @@ internal sealed class ScreenObject : IDisposable
     private float _falloffMax = float.NaN;
     private float _appliedClearance = float.NaN;
     private static readonly Color IdleColor = new Color(0.03f, 0.03f, 0.05f, 1f);
+
+    // Lowest the console panel may sit above the placement point, so it stays out of the floor.
+    private const float MinConsoleHeight = 0.35f;
 
     public static ScreenObject Create(Vector3 position, float yawDegrees, float widthMeters, int texWidth, int texHeight)
     {
@@ -58,24 +63,40 @@ internal sealed class ScreenObject : IDisposable
         _pictureHeight = h;
 
         // Frame: a slightly larger dark quad just behind the picture.
-        _frame = MakeQuad("Frame", w + 0.16f, h + 0.16f, Vector3.zero);
+        _frame = Primitives.MakeQuad("Frame", w + 0.16f, h + 0.16f, Vector3.zero);
         _frame.transform.SetParent(Root.transform, false);
-        var frameMat = MakeMaterial(null, new Color(0.08f, 0.07f, 0.06f, 1f));
+        var frameMat = Primitives.MakeMaterial(null, new Color(0.08f, 0.07f, 0.06f, 1f));
         _frame.GetComponent<MeshRenderer>().material = frameMat;
 
         // Leg so it looks like it stands on the ground rather than floating. Built 1 m tall
         // and scaled to the configured clearance, so the stand always reaches the ground.
-        _leg = MakeQuad("Leg", 0.25f, 1f, Vector3.zero);
+        _leg = Primitives.MakeQuad("Leg", 0.25f, 1f, Vector3.zero);
         _leg.transform.SetParent(Root.transform, false);
         _leg.GetComponent<MeshRenderer>().material = frameMat;
 
         // Picture.
-        _picture = MakeQuad("Picture", w, h, Vector3.zero);
+        _picture = Primitives.MakeQuad("Picture", w, h, Vector3.zero);
         _picture.transform.SetParent(Root.transform, false);
-        _screenMaterial = MakeMaterial(Texture, Color.white);
+        _screenMaterial = Primitives.MakeMaterial(Texture, Color.white);
         _picture.GetComponent<MeshRenderer>().material = _screenMaterial;
 
         ApplyLayoutConfig();
+
+        // Parented to Root, so moving the screen carries the console with it. A failure here
+        // must not cost you the screen: the video is the point, the console is a convenience.
+        if (Plugin.ShowConsole.Value)
+        {
+            try
+            {
+                Console = ControlConsole.Create(Root.transform, Plugin.ConsoleOffset.Value,
+                    Mathf.Max(_appliedClearance + Plugin.ConsoleHeight.Value, MinConsoleHeight));
+            }
+            catch (Exception e)
+            {
+                Console = null;
+                Plugin.Log.LogWarning($"Could not build the control console ({e.Message}); use F8 instead.");
+            }
+        }
 
         // Audio: positional, no doppler (the screen never moves). The falloff shape is set
         // up separately so a config change can re-apply it without rebuilding the screen.
@@ -135,8 +156,14 @@ internal sealed class ScreenObject : IDisposable
             _leg.transform.localScale = new Vector3(1f, clearance, 1f);
         }
 
+        // Keep the controls with the screen. Floored so that sinking the screen into the
+        // ground does not bury the console with it.
+        float consoleY = Mathf.Max(clearance + Plugin.ConsoleHeight.Value, MinConsoleHeight);
+        Console?.SetHeight(consoleY);
+
         Plugin.Log.LogInfo($"Screen layout: bottom edge {clearance:F2}m above the placement point, "
-                           + $"picture centre {centreY:F2}m, top {(clearance + 0.08f + _pictureHeight):F2}m.");
+                           + $"picture centre {centreY:F2}m, top {(clearance + 0.08f + _pictureHeight):F2}m, "
+                           + $"console {consoleY:F2}m.");
     }
 
     public void ApplyAudioConfig()
@@ -229,133 +256,12 @@ internal sealed class ScreenObject : IDisposable
 
     // --- Construction helpers -------------------------------------------------------
 
-    /// <summary>A quad whose front face points toward local -Z, centred at <paramref name="localPos"/>.</summary>
-    private static GameObject MakeQuad(string name, float width, float height, Vector3 localPos)
-    {
-        var go = new GameObject(name);
-        go.transform.localPosition = localPos;
-
-        float hw = width * 0.5f, hh = height * 0.5f;
-        var vertices = new Vector3[]
-        {
-            new Vector3(-hw, -hh, 0f),
-            new Vector3( hw, -hh, 0f),
-            new Vector3( hw,  hh, 0f),
-            new Vector3(-hw,  hh, 0f),
-        };
-        var uv = new Vector2[]
-        {
-            new Vector2(0f, 0f),
-            new Vector2(1f, 0f),
-            new Vector2(1f, 1f),
-            new Vector2(0f, 1f),
-        };
-        var normals = new Vector3[] { -Vector3.forward, -Vector3.forward, -Vector3.forward, -Vector3.forward };
-        // Same convention as Unity's built-in Quad: the front face points toward local -Z,
-        // so a viewer standing on the -Z side sees the picture the right way round. The
-        // controller therefore orients the screen with its +Z pointing AWAY from the player.
-        var triangles = new int[] { 0, 2, 1, 0, 3, 2 };
-
-        var mesh = new Mesh();
-        mesh.name = "BigScreen." + name;
-        mesh.vertices = (Il2CppStructArray<Vector3>)vertices;
-        mesh.uv = (Il2CppStructArray<Vector2>)uv;
-        mesh.normals = (Il2CppStructArray<Vector3>)normals;
-        mesh.triangles = (Il2CppStructArray<int>)triangles;
-        mesh.RecalculateBounds();
-
-        go.AddComponent<MeshFilter>().mesh = mesh;
-        var mr = go.AddComponent<MeshRenderer>();
-        mr.shadowCastingMode = ShadowCastingMode.Off;
-        mr.receiveShadows = false;
-        return go;
-    }
-
-    private static readonly string[] ShaderCandidates =
-    {
-        "Universal Render Pipeline/Unlit",
-        "Unlit/Texture",
-        "Unlit/Color",
-        "Sprites/Default",
-        "UI/Default",
-        "Universal Render Pipeline/Lit",
-        "Standard",
-        "Legacy Shaders/Diffuse",
-    };
-
-    private static Shader _cachedShader;
-    private static Material _cachedSceneTemplate;
-
-    /// <summary>
-    /// Finds a shader that exists in this build. Unlit is ideal (the screen is visible at
-    /// night and never washed out by lighting); if nothing by name exists we clone a
-    /// material that is already rendering in the scene, which is guaranteed to work in
-    /// whatever pipeline the game uses.
-    /// </summary>
-    private static Material MakeMaterial(Texture tex, Color tint)
-    {
-        Material mat = null;
-
-        if (_cachedShader == null)
-        {
-            foreach (var name in ShaderCandidates)
-            {
-                try
-                {
-                    var s = Shader.Find(name);
-                    if (s != null) { _cachedShader = s; Plugin.Log.LogInfo($"Screen shader: {name}"); break; }
-                }
-                catch { }
-            }
-        }
-
-        if (_cachedShader != null)
-        {
-            mat = new Material(_cachedShader);
-        }
-        else
-        {
-            if (_cachedSceneTemplate == null)
-            {
-                try
-                {
-                    var renderers = UnityEngine.Object.FindObjectsOfType<MeshRenderer>();
-                    foreach (var r in renderers)
-                    {
-                        var m = r != null ? r.sharedMaterial : null;
-                        if (m != null && m.shader != null) { _cachedSceneTemplate = m; break; }
-                    }
-                }
-                catch { }
-            }
-            if (_cachedSceneTemplate == null)
-                throw new InvalidOperationException("No usable shader found in this build (see docs/ARCHITECTURE.md 'Risk 3').");
-            mat = new Material(_cachedSceneTemplate);
-            Plugin.Log.LogWarning($"No known shader found; cloned scene material '{_cachedSceneTemplate.name}' ({_cachedSceneTemplate.shader.name}).");
-        }
-
-        mat.name = "BigScreen.Mat";
-        // Cover both built-in ("_MainTex/_Color") and URP ("_BaseMap/_BaseColor") property names.
-        if (tex != null)
-        {
-            mat.mainTexture = tex;
-            if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", tex);
-            if (mat.HasProperty("_EmissionMap"))
-            {
-                mat.SetTexture("_EmissionMap", tex);
-                mat.SetColor("_EmissionColor", Color.white);
-                mat.EnableKeyword("_EMISSION");
-            }
-        }
-        if (mat.HasProperty("_Color")) mat.SetColor("_Color", tint);
-        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", tint);
-        return mat;
-    }
-
     public void Dispose()
     {
         try
         {
+            Console?.Dispose();
+            Console = null;
             if (Root != null) UnityEngine.Object.Destroy(Root);
             if (Texture != null) { Texture.Release(); UnityEngine.Object.Destroy(Texture); }
         }

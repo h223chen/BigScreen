@@ -23,6 +23,7 @@ internal static class AutoStart
 {
     private static bool _hostDone;
     private static bool _loadDone;
+    private static bool _placeDone;
     private static bool _spawnDone;
     private static float _menuSeenAt = -1f;
     private static float _sessionSeenAt = -1f;
@@ -38,12 +39,14 @@ internal static class AutoStart
                 _menuSeenAt = -1f;
                 if (_sessionSeenAt < 0f) _sessionSeenAt = Time.unscaledTime;
                 TickSpawn();
+                TickAutoPlaceScreen(controller);
                 TickAutoLoad(controller);
             }
             else
             {
                 _sessionSeenAt = -1f;
                 _loadDone = false;
+                _placeDone = false;
                 _spawnDone = false;
                 TickAutoDismiss();
                 TickAutoHost();
@@ -261,6 +264,34 @@ internal static class AutoStart
     }
 
     // --- Loading a video --------------------------------------------------------------
+
+    /// <summary>
+    /// Puts the screen (and its console) at the recorded pose, without waiting for a video.
+    ///
+    /// Deliberately independent of AutoLoadUrl. With auto-load off - the normal way to work
+    /// now that URLs are pasted at the console - nothing else would place a screen, and you
+    /// would have to open the panel just to get something to paste at.
+    /// </summary>
+    private static void TickAutoPlaceScreen(BigScreenController controller)
+    {
+        if (_placeDone) return;
+        if (!controller.Session.IsHost) return;
+        if (Time.unscaledTime - _sessionSeenAt < Plugin.AutoLoadDelay.Value) return;
+
+        if (controller.Session.State.HasScreen) { _placeDone = true; return; }
+
+        // No recorded pose means nobody has chosen a spot, so leave placement to the player
+        // rather than dropping a screen wherever they happen to be looking.
+        if (!TryParsePose(Plugin.ScreenPose.Value, out var pos, out float yaw, out bool hasYaw) || !hasYaw)
+        {
+            _placeDone = true;
+            return;
+        }
+
+        _placeDone = true;
+        Plugin.Log.LogInfo("Auto-place: putting the screen at the recorded pose.");
+        controller.PlaceScreenAt(pos, yaw);
+    }
 
     private static void TickAutoLoad(BigScreenController controller)
     {

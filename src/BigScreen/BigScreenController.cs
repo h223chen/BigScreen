@@ -31,7 +31,18 @@ public class BigScreenController : MonoBehaviour
 
     internal SyncSession Session { get; } = new SyncSession();
     internal string StatusLine { get; private set; } = "Idle.";
-    internal string LastError { get; private set; }
+    /// <summary>
+    /// Last thing that went wrong, shown in the panel until something replaces it. The
+    /// timestamp is for the console lamp, which should go back to inviting a paste rather
+    /// than sitting red forever over a mistake you have already moved on from.
+    /// </summary>
+    internal string LastError
+    {
+        get => _lastError;
+        private set { _lastError = value; _lastErrorAt = Time.unscaledTime; }
+    }
+    private string _lastError;
+    private float _lastErrorAt = -1000f;
     internal double LastDrift { get; private set; }
     internal double LocalVideoTime => _video != null && _video.IsReady ? _video.Time : 0.0;
     internal double LocalVideoDuration => _video != null && _video.IsReady ? _video.Duration : 0.0;
@@ -54,6 +65,7 @@ public class BigScreenController : MonoBehaviour
     private float _nextDiag;
     private bool _wasInSession;
     private bool _configDirty;
+    private Vector3 _lastAimOrigin;
     private float _nextConfigSave;
 
     // Writing the config file is main-thread disk I/O. Holding a nudge button would do it
@@ -61,6 +73,9 @@ public class BigScreenController : MonoBehaviour
     private const float ConfigSaveIntervalSeconds = 3f;
 
     private const float MinSecondsBetweenSeeks = 2.5f;
+
+    // How long the console's lamp stays red after a failure.
+    private const float ConsoleErrorSeconds = 8f;
 
     private void Awake()
     {
@@ -99,7 +114,8 @@ public class BigScreenController : MonoBehaviour
                 Plugin.Log.LogInfo($"[diag] host={Session.IsHost} client={NetworkClient.isConnected} peers={Session.ModdedPeerCount} " +
                                    $"rev={Session.State.Revision} screen={(_screen != null)} url={Session.State.VideoUrl} " +
                                    $"playing={Session.State.Playing} ready={_video?.IsReady} t={LocalVideoTime:F1} drift={LastDrift:F2} " +
-                                   $"nettime={SafeNetTime():F1} conv_failed={MirrorChannel.ConversionFailed}");
+                                   $"nettime={SafeNetTime():F1} conv_failed={MirrorChannel.ConversionFailed} " +
+                                   $"console={_screen?.Console?.DescribeAim(_lastAimOrigin) ?? "none"}");
             }
         }
         catch (Exception e)
@@ -277,12 +293,6 @@ public class BigScreenController : MonoBehaviour
         });
     }
 
-    internal void ForceResync()
-    {
-        _lastSeekAt = -100f;
-        _pendingInitialSeek = true;
-    }
-
     internal void ApplyLocalAudioConfig()
     {
         _screen?.ApplyAudioConfig();
@@ -434,6 +444,94 @@ public class BigScreenController : MonoBehaviour
         // Cheap no-op unless the configured height actually changed, so the screen can be
         // raised or lowered from the config file without re-placing it.
         _screen?.ApplyLayoutConfig();
+        TickConsole();
+    }
+
+    /// <summary>
+    /// Drives the in-world console: where the player is aiming, and whether they pressed.
+    ///
+    /// The interact key is swallowed while the F8 panel is open, so typing in the panel's
+    /// URL field cannot also mash console buttons behind it.
+    /// </summary>
+    private void TickConsole()
+    {
+        var console = _screen?.Console;
+        if (console == null) return;
+
+        bool aimValid = TryGetAimRay(out var origin, out var direction);
+        _lastAimOrigin = aimValid ? origin : Vector3.zero;
+
+        // Aiming was proven correct by the diagnostics - the ray lands on the right button -
+        // so anything still not working is the press itself. A mouse click counts too: it is
+        // the obvious thing to try when looking at a button, and it means the console does
+        // not depend on one key surviving whatever the game does to input.
+        // Left click is the game's own interact button, so it is the default and E is not:
+        // E raises the player's right arm in Big Walk. The key is opt-in via config.
+        var key = Plugin.InteractKey.Value;
+        bool interact = key != KeyCode.None && Input.GetKeyDown(key);
+        // Legacy Input only sees the mouse, so a gamepad's interact button never reached us.
+        // GameInput asks Rewired, which is where the game's real bindings live.
+        bool click = Input.GetMouseButtonDown(0) || GameInput.InteractPressed();
+
+        if (Plugin.Diagnostics.Value && Input.anyKeyDown)
+        {
+            // Proves whether legacy Input sees anything at all, which is the difference
+            // between "the key is swallowed" and "we are ignoring it on purpose".
+            Plugin.Log.LogInfo($"Input: anyKeyDown  interact({Plugin.InteractKey.Value})={interact} " +
+                               $"click/interact={click} panelOpen={_panelVisible}");
+        }
+
+        bool pressed = (interact || click) && !_panelVisible;
+        if ((interact || click) && _panelVisible)
+            Plugin.Log.LogInfo("Console: press ignored because the F8 panel is open.");
+
+        console.Tick(this, aimValid, origin, direction, Session.State.Playing, ConsoleStatus(),
+                     Plugin.ConsoleReach.Value, pressed);
+    }
+
+    /// <summary>
+    /// Boils the mod's state down to the four colours the console's lamp can show. Resolving
+    /// a URL takes several seconds, so "working" has to be distinguishable from "nothing
+    /// happened" or pressing paste looks like it did nothing at all.
+    /// </summary>
+    private ControlConsole.Status ConsoleStatus()
+    {
+        if (!string.IsNullOrEmpty(LastError) && Time.unscaledTime - _lastErrorAt < ConsoleErrorSeconds)
+            return ControlConsole.Status.Error;
+        if (string.IsNullOrEmpty(Session.State.VideoUrl)) return ControlConsole.Status.Idle;
+        return _video != null && _video.IsReady ? ControlConsole.Status.Ready : ControlConsole.Status.Working;
+    }
+
+    /// <summary>Where the local player is looking, for aiming at the console.</summary>
+    private static bool TryGetAimRay(out Vector3 origin, out Vector3 direction)
+    {
+        origin = Vector3.zero;
+        direction = Vector3.forward;
+        try
+        {
+            var pc = WorldManager.localPlayerCharacter;
+            if (pc == null) return false;
+            var cam = pc.cameraTransform;
+            if (cam == null) return false;
+
+            origin = cam.position;
+            direction = cam.forward;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The console has no text, so anything it needs to say in words comes out here and
+    /// shows up in the F8 panel and the log.
+    /// </summary>
+    internal void ReportConsoleError(string message)
+    {
+        LastError = message;
+        Plugin.Log.LogWarning("Console: " + message);
     }
 
     private void ReconcileVideo()

@@ -21,7 +21,7 @@ public class Plugin : BasePlugin
 {
     public const string Guid = "dev.h223chen.bigscreen";
     public const string Name = "BigScreen";
-    public const string Version = "0.1.0";
+    public const string Version = "1.0.0";
 
     internal static Plugin Instance { get; private set; }
     // `new` because BasePlugin exposes an instance Log; ours is the static shortcut the
@@ -36,6 +36,12 @@ public class Plugin : BasePlugin
     internal static ConfigEntry<float> AudioFullVolumeRadius;
     internal static ConfigEntry<float> ScreenWidthMeters;
     internal static ConfigEntry<float> ScreenGroundClearance;
+    internal static ConfigEntry<bool> ShowConsole;
+    internal static ConfigEntry<float> ConsoleOffset;
+    internal static ConfigEntry<float> ConsoleHeight;
+    internal static ConfigEntry<float> ConsoleReach;
+    internal static ConfigEntry<KeyCode> InteractKey;
+    internal static ConfigEntry<string> RewiredAction;
     internal static ConfigEntry<int> RenderWidth;
     internal static ConfigEntry<int> RenderHeight;
     internal static ConfigEntry<string> YtDlpPath;
@@ -59,6 +65,7 @@ public class Plugin : BasePlugin
     internal static ConfigEntry<bool> AutoDismissMenus;
     internal static ConfigEntry<string> SpawnPosition;
     internal static ConfigEntry<string> ScreenPose;
+    internal static ConfigEntry<bool> ShowDevTools;
 
     private Harmony _harmony;
 
@@ -69,6 +76,16 @@ public class Plugin : BasePlugin
 
         ToggleUiKey = Config.Bind("Keys", "ToggleUI", KeyCode.F8,
             "Opens/closes the BigScreen control panel.");
+
+        InteractKey = Config.Bind("Keys", "Interact", KeyCode.None,
+            "Optional extra key for pressing the console button you are looking at. Left click " +
+            "always works and is the game's own interact button, so this is off by default. " +
+            "Avoid E: Big Walk uses it to raise the player's right arm.");
+
+        RewiredAction = Config.Bind("Keys", "RewiredInteractAction", "",
+            "Name of the game's own interact action, used so the console responds to a controller " +
+            "as well as the mouse. Empty auto-detects it; the log lists every action the game " +
+            "defines on the first attempt if the guess is wrong.");
 
         UiFontSize = Config.Bind("UI", "FontSize", 16,
             new ConfigDescription("Font size for the control panel. The panel picks up a change the " +
@@ -100,6 +117,22 @@ public class Plugin : BasePlugin
                                   "BepInEx does not re-read it - so use the panel's Raise/Lower buttons, " +
                                   "which write the value back here.",
                 new AcceptableValueRange<float>(-2f, 5f)));
+        ShowConsole = Config.Bind("Screen", "ShowConsole", true,
+            "Put a control podium beside the screen with skip, play/pause and paste buttons. " +
+            "Turn it off to keep just the screen; the F8 panel always works either way.");
+        ConsoleOffset = Config.Bind("Screen", "ConsoleOffsetMeters", 2.8f,
+            new ConfigDescription("How far to the right of the screen's centre the console stands. " +
+                                  "Negative puts it on the left. The default clears a 4 m screen.",
+                new AcceptableValueRange<float>(-15f, 15f)));
+        ConsoleHeight = Config.Bind("Screen", "ConsoleHeightMeters", 0.5f,
+            new ConfigDescription("Height of the console's panel above the BOTTOM EDGE of the screen, so the " +
+                                  "controls follow the screen when it is raised or lowered. It never drops " +
+                                  "below 0.35 m off the ground, so sinking the screen does not bury it.",
+                new AcceptableValueRange<float>(0f, 3f)));
+        ConsoleReach = Config.Bind("Screen", "ConsoleReachMeters", 4f,
+            new ConfigDescription("How close you must be for the console's buttons to respond to your aim.",
+                new AcceptableValueRange<float>(1f, 20f)));
+
         RenderWidth = Config.Bind("Screen", "RenderWidth", 1280,
             "Width of the texture the video is decoded into. 1280x720 is plenty for a 4 m screen.");
         RenderHeight = Config.Bind("Screen", "RenderHeight", 720,
@@ -132,8 +165,10 @@ public class Plugin : BasePlugin
         DriftTolerance = Config.Bind("Sync", "DriftToleranceSeconds", 1.0f,
             new ConfigDescription("How far your playback may drift from the host's timeline before we re-seek.",
                 new AcceptableValueRange<float>(0.25f, 10f)));
-        GuestsCanControl = Config.Bind("Sync", "GuestsCanControl", false,
-            "Host only: let guests with the mod load videos, play/pause, seek and move the screen.");
+        GuestsCanControl = Config.Bind("Sync", "GuestsCanControl", true,
+            "Host only: let guests with the mod load videos, play/pause, seek and move the screen. " +
+            "On by default: watching together is the point, and only players who also have the mod " +
+            "can send anything at all.");
         AutoPlay = Config.Bind("Sync", "AutoPlay", true,
             "Host only: start playing as soon as a loaded video is ready.");
 
@@ -164,6 +199,10 @@ public class Plugin : BasePlugin
             "where you are standing and which way you are looking. The yaw matters: the screen " +
             "is auto-placed in front of you, so without one it lands somewhere different on " +
             "every run.");
+
+        ShowDevTools = Config.Bind("Dev", "ShowDevTools", false,
+            "Show development-only controls in the F8 panel, such as 'Set spawn here'. These write " +
+            "to the [Dev] settings above and are of no use in normal play, so they are hidden.");
 
         ScreenPose = Config.Bind("Dev", "ScreenPose", "",
             "Place the screen at this exact pose on an automated run, as \"x,y,z,yaw\". Empty means " +

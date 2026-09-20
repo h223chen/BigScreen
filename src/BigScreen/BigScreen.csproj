@@ -3,7 +3,7 @@
   <PropertyGroup>
     <AssemblyName>BigScreen</AssemblyName>
     <RootNamespace>BigScreen</RootNamespace>
-    <Version>0.1.0</Version>
+    <Version>1.0.0</Version>
     <Description>A shared in-world screen for watching YouTube together in Big Walk. Everyone with the mod sees and hears the same video, in sync.</Description>
   </PropertyGroup>
 
@@ -32,6 +32,8 @@
   <ItemGroup Label="Game">
     <Reference Include="Assembly-CSharp"><HintPath>$(Interop)\Assembly-CSharp.dll</HintPath></Reference>
     <Reference Include="Mirror"><HintPath>$(Interop)\Mirror.dll</HintPath></Reference>
+    <!-- The game's input system. Legacy UnityEngine.Input does not see gamepad bindings. -->
+    <Reference Include="Rewired_Core"><HintPath>$(Interop)\Rewired_Core.dll</HintPath></Reference>
   </ItemGroup>
 
   <ItemGroup>

@@ -33,10 +33,6 @@ internal sealed class ControlPanel
     // getting the height wrong is more obvious than being a few centimetres off sideways.
     private const float NudgeMeters = 0.25f;
 
-    // A plain progressive H.264/AAC MP4. Loading this skips yt-dlp entirely (see
-    // YtDlp.LooksLikeDirectMedia), so it tests the screen and VideoPlayer on their own.
-    private const string TestMp4Url = "https://samplelib.com/mp4/sample-5s.mp4";
-
     public ControlPanel(BigScreenController controller)
     {
         _c = controller;
@@ -153,9 +149,12 @@ internal sealed class ControlPanel
         GUI.enabled = inLobby && canControl && _c.Session.State.HasScreen;
         if (GUILayout.Button("Remove screen", _button, GUILayout.Height(ButtonHeight)))
             _c.UserRemoveScreen();
-        GUI.enabled = inLobby;
-        if (GUILayout.Button("Set spawn here", _button, GUILayout.Height(ButtonHeight)))
-            _c.UserSetSpawnHere();
+        if (Plugin.ShowDevTools.Value)
+        {
+            GUI.enabled = inLobby;
+            if (GUILayout.Button("Set spawn here", _button, GUILayout.Height(ButtonHeight)))
+                _c.UserSetSpawnHere();
+        }
         GUI.enabled = true;
         GUILayout.EndHorizontal();
 
@@ -206,9 +205,6 @@ internal sealed class ControlPanel
         GUI.enabled = true;
         GUILayout.EndHorizontal();
 
-        // A duplicate of the Test MP4 button at the top of the panel. If clicking this one
-        // is fine and the bottom one still kills the game, the position matters rather than
-        // the button; if both crash, it is the button.
         GUI.enabled = inLobby && canControl;
         var st = session.State;
         if (!string.IsNullOrEmpty(st.VideoUrl))
@@ -251,16 +247,6 @@ internal sealed class ControlPanel
         GUILayout.Space(8f);
         GUILayout.BeginHorizontal();
         if (GUILayout.Button("Update yt-dlp", _button, GUILayout.Width(_builtForFontSize * 10f), GUILayout.Height(ButtonHeight))) _c.UserUpdateYtDlp();
-        if (GUILayout.Button("Resync", _button, GUILayout.Width(_builtForFontSize * 7f), GUILayout.Height(ButtonHeight)))
-            _c.ForceResync();
-        GUI.enabled = inLobby && canControl;
-        if (GUILayout.Button("Test MP4", _button, GUILayout.Width(_builtForFontSize * 8f), GUILayout.Height(ButtonHeight)))
-        {
-            // Loads a short MP4 with no yt-dlp involved, to check the screen on its own.
-            GUIUtility.keyboardControl = 0;
-            _c.UserLoad(TestMp4Url);
-        }
-        GUI.enabled = true;
         GUILayout.FlexibleSpace();
         if (GUILayout.Button($"Close [{Plugin.ToggleUiKey.Value}]", _button, GUILayout.Width(_builtForFontSize * 10f), GUILayout.Height(ButtonHeight))) _c.SetPanelVisible(false);
         GUILayout.EndHorizontal();
