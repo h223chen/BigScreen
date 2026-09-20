@@ -29,6 +29,10 @@ internal sealed class ControlPanel
 
     private const int WindowId = 0x8153;
 
+    // How far one Left/Right/Back/Forward click slides the screen. Height uses a finer step:
+    // getting the height wrong is more obvious than being a few centimetres off sideways.
+    private const float NudgeMeters = 0.25f;
+
     // A plain progressive H.264/AAC MP4. Loading this skips yt-dlp entirely (see
     // YtDlp.LooksLikeDirectMedia), so it tests the screen and VideoPlayer on their own.
     private const string TestMp4Url = "https://samplelib.com/mp4/sample-5s.mp4";
@@ -153,6 +157,42 @@ internal sealed class ControlPanel
         if (GUILayout.Button("Set spawn here", _button, GUILayout.Height(ButtonHeight)))
             _c.UserSetSpawnHere();
         GUI.enabled = true;
+        GUILayout.EndHorizontal();
+
+        // Height is local geometry rather than shared state, so this works whether or not
+        // the host has handed out control. Editing the config file mid-game does nothing;
+        // BepInEx does not re-read it, so these buttons are the way to dial the height in.
+        GUILayout.BeginHorizontal();
+        GUILayout.Label($"Screen height: {Plugin.ScreenGroundClearance.Value:F2} m", _label,
+                        GUILayout.Width(_builtForFontSize * 13f));
+        GUI.enabled = _c.Session.State.HasScreen;
+        if (GUILayout.Button("Lower", _button, GUILayout.Width(_builtForFontSize * 6f), GUILayout.Height(ButtonHeight)))
+            _c.UserNudgeScreenHeight(-0.1f);
+        if (GUILayout.Button("Raise", _button, GUILayout.Width(_builtForFontSize * 6f), GUILayout.Height(ButtonHeight)))
+            _c.UserNudgeScreenHeight(+0.1f);
+        GUI.enabled = true;
+        GUILayout.FlexibleSpace();
+        GUILayout.EndHorizontal();
+
+        // Sliding the screen moves it for everyone, so unlike the height this needs control.
+        // Directions are relative to the screen's own facing, not the world axes.
+        var screenPos = _c.Session.State.ScreenPosition;
+        GUILayout.BeginHorizontal();
+        GUILayout.Label(_c.Session.State.HasScreen
+                            ? $"Screen at ({screenPos.x:F1}, {screenPos.y:F1}, {screenPos.z:F1})"
+                            : "Screen at (none placed)",
+                        _label, GUILayout.Width(_builtForFontSize * 13f));
+        GUI.enabled = inLobby && canControl && _c.Session.State.HasScreen;
+        if (GUILayout.Button("Left", _button, GUILayout.Width(_builtForFontSize * 5f), GUILayout.Height(ButtonHeight)))
+            _c.UserNudgeScreen(-NudgeMeters, 0f);
+        if (GUILayout.Button("Right", _button, GUILayout.Width(_builtForFontSize * 5f), GUILayout.Height(ButtonHeight)))
+            _c.UserNudgeScreen(+NudgeMeters, 0f);
+        if (GUILayout.Button("Back", _button, GUILayout.Width(_builtForFontSize * 5f), GUILayout.Height(ButtonHeight)))
+            _c.UserNudgeScreen(0f, -NudgeMeters);
+        if (GUILayout.Button("Forward", _button, GUILayout.Width(_builtForFontSize * 7f), GUILayout.Height(ButtonHeight)))
+            _c.UserNudgeScreen(0f, +NudgeMeters);
+        GUI.enabled = true;
+        GUILayout.FlexibleSpace();
         GUILayout.EndHorizontal();
         GUILayout.Space(8f);
 

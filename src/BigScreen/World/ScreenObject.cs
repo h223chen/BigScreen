@@ -23,6 +23,14 @@ internal sealed class ScreenObject : IDisposable
     public RenderTexture Texture { get; private set; }
 
     private Material _screenMaterial;
+    private GameObject _frame;
+    private GameObject _leg;
+    private GameObject _picture;
+    private float _pictureHeight;
+    // What the rolloff curve and layout were last built for; NaN so the first apply runs.
+    private float _falloffFull = float.NaN;
+    private float _falloffMax = float.NaN;
+    private float _appliedClearance = float.NaN;
     private static readonly Color IdleColor = new Color(0.03f, 0.03f, 0.05f, 1f);
 
     public static ScreenObject Create(Vector3 position, float yawDegrees, float widthMeters, int texWidth, int texHeight)
@@ -47,33 +55,37 @@ internal sealed class ScreenObject : IDisposable
         Texture.Create();
         ClearToIdle();
 
-        // Frame: a slightly larger dark quad just behind the picture.
-        var frame = MakeQuad("Frame", w + 0.16f, h + 0.16f, new Vector3(0f, h * 0.5f + 0.08f + 0.6f, 0.02f));
-        frame.transform.SetParent(Root.transform, false);
-        var frameMat = MakeMaterial(null, new Color(0.08f, 0.07f, 0.06f, 1f));
-        frame.GetComponent<MeshRenderer>().material = frameMat;
+        _pictureHeight = h;
 
-        // Legs so it looks like it stands on the ground rather than floating.
-        var leg = MakeQuad("Leg", 0.25f, 0.6f, new Vector3(0f, 0.3f, 0.02f));
-        leg.transform.SetParent(Root.transform, false);
-        leg.GetComponent<MeshRenderer>().material = frameMat;
+        // Frame: a slightly larger dark quad just behind the picture.
+        _frame = MakeQuad("Frame", w + 0.16f, h + 0.16f, Vector3.zero);
+        _frame.transform.SetParent(Root.transform, false);
+        var frameMat = MakeMaterial(null, new Color(0.08f, 0.07f, 0.06f, 1f));
+        _frame.GetComponent<MeshRenderer>().material = frameMat;
+
+        // Leg so it looks like it stands on the ground rather than floating. Built 1 m tall
+        // and scaled to the configured clearance, so the stand always reaches the ground.
+        _leg = MakeQuad("Leg", 0.25f, 1f, Vector3.zero);
+        _leg.transform.SetParent(Root.transform, false);
+        _leg.GetComponent<MeshRenderer>().material = frameMat;
 
         // Picture.
-        var picture = MakeQuad("Picture", w, h, new Vector3(0f, h * 0.5f + 0.08f + 0.6f, 0f));
-        picture.transform.SetParent(Root.transform, false);
+        _picture = MakeQuad("Picture", w, h, Vector3.zero);
+        _picture.transform.SetParent(Root.transform, false);
         _screenMaterial = MakeMaterial(Texture, Color.white);
-        picture.GetComponent<MeshRenderer>().material = _screenMaterial;
+        _picture.GetComponent<MeshRenderer>().material = _screenMaterial;
 
-        // Audio: positional, gentle linear falloff, no doppler (the screen never moves).
+        ApplyLayoutConfig();
+
+        // Audio: positional, no doppler (the screen never moves). The falloff shape is set
+        // up separately so a config change can re-apply it without rebuilding the screen.
         Audio = Root.AddComponent<AudioSource>();
         Audio.playOnAwake = false;
         Audio.spatialBlend = 1f;
-        Audio.rolloffMode = AudioRolloffMode.Linear;
-        Audio.minDistance = Mathf.Max(2f, w * 0.75f);
-        Audio.maxDistance = Plugin.AudioMaxDistance.Value;
         Audio.dopplerLevel = 0f;
         Audio.spread = 45f;
         Audio.volume = Plugin.Volume.Value;
+        ApplyAudioConfig();
     }
 
     public void MoveTo(Vector3 position, float yawDegrees)
@@ -92,11 +104,127 @@ internal sealed class ScreenObject : IDisposable
         RenderTexture.active = prev;
     }
 
+    /// <summary>
+    /// Positions the picture, frame and leg for the configured ground clearance - how far
+    /// the bottom edge of the picture sits above the point the screen was placed at.
+    ///
+    /// Re-applied every frame (cheap: it returns immediately unless the value changed) so
+    /// the height can be dialled in from the config file while the game runs, without
+    /// re-placing the screen or restarting.
+    /// </summary>
+    public void ApplyLayoutConfig()
+    {
+        if (Root == null || _picture == null) return;
+
+        float clearance = Plugin.ScreenGroundClearance.Value;
+        if (Mathf.Approximately(clearance, _appliedClearance)) return;
+        _appliedClearance = clearance;
+
+        // Frame overhangs the picture by 0.08 m, so the picture centre sits that much above
+        // the bottom of the frame.
+        float centreY = clearance + 0.08f + _pictureHeight * 0.5f;
+        _picture.transform.localPosition = new Vector3(0f, centreY, 0f);
+        _frame.transform.localPosition = new Vector3(0f, centreY, 0.02f);
+
+        // With the screen sitting on or below its anchor there is no gap for a stand.
+        bool standVisible = clearance > 0.05f;
+        _leg.SetActive(standVisible);
+        if (standVisible)
+        {
+            _leg.transform.localPosition = new Vector3(0f, clearance * 0.5f, 0.02f);
+            _leg.transform.localScale = new Vector3(1f, clearance, 1f);
+        }
+
+        Plugin.Log.LogInfo($"Screen layout: bottom edge {clearance:F2}m above the placement point, "
+                           + $"picture centre {centreY:F2}m, top {(clearance + 0.08f + _pictureHeight):F2}m.");
+    }
+
     public void ApplyAudioConfig()
     {
         if (Audio == null) return;
-        Audio.maxDistance = Plugin.AudioMaxDistance.Value;
         Audio.volume = Plugin.Volume.Value;
+
+        float max = Plugin.AudioMaxDistance.Value;
+        // Full-volume radius has to stay meaningfully inside max distance, or there is no
+        // room left for the falloff.
+        float full = Mathf.Clamp(Plugin.AudioFullVolumeRadius.Value, 0.5f, max * 0.5f);
+
+        // The volume slider re-applies this on every drag tick, so rebuilding the curve each
+        // time would be pointless work and a log line per frame.
+        if (Mathf.Approximately(full, _falloffFull) && Mathf.Approximately(max, _falloffMax)) return;
+        _falloffFull = full;
+        _falloffMax = max;
+
+        Audio.minDistance = full;
+        Audio.maxDistance = max;
+
+        if (!TryApplyCustomFalloff(full, max))
+        {
+            // Same 1/distance shape, but Unity stops attenuating at maxDistance instead of
+            // reaching zero, so distant players keep hearing a faint version of the video.
+            Audio.rolloffMode = AudioRolloffMode.Logarithmic;
+        }
+    }
+
+    /// <summary>
+    /// Volume at a given distance: full inside <paramref name="full"/>, then 1/distance -
+    /// how sound actually behaves - rescaled so it reaches exactly zero at
+    /// <paramref name="max"/> rather than trailing off forever.
+    ///
+    /// Unity's built-in modes each get one half of this right. Linear reaches silence but is
+    /// far too loud up close: with the old 3 m / 40 m settings a player standing 4 m from the
+    /// screen still heard 97% of full volume, which is what made the sound feel like it was
+    /// everywhere rather than coming from the screen. Logarithmic has the right shape but
+    /// never reaches zero.
+    /// </summary>
+    private static float FalloffAt(float distance, float full, float max)
+    {
+        if (distance <= full) return 1f;
+        if (distance >= max) return 0f;
+
+        float floorTerm = full / max;            // what 1/distance still gives at max distance
+        return ((full / distance) - floorTerm) / (1f - floorTerm);
+    }
+
+    /// <summary>
+    /// Installs <see cref="FalloffAt"/> as the AudioSource's custom rolloff curve.
+    ///
+    /// Unity samples a custom rolloff curve over normalised distance, where time 1 is
+    /// maxDistance (not minDistance to maxDistance). Sampling densely rather than computing
+    /// tangents keeps the shape accurate and avoids the overshoot auto-tangents produce on a
+    /// curve this steep.
+    ///
+    /// Returns false if the interop call is not available on this build, so the caller can
+    /// fall back to a built-in mode rather than leaving the screen silent.
+    /// </summary>
+    private bool TryApplyCustomFalloff(float full, float max)
+    {
+        const int Samples = 24;
+
+        try
+        {
+            var curve = new AnimationCurve();
+            for (int i = 0; i <= Samples; i++)
+            {
+                float t = i / (float)Samples;
+                curve.AddKey(t, FalloffAt(t * max, full, max));
+            }
+            // Pin the corner where full volume ends, which the even spacing above may miss.
+            curve.AddKey(full / max, 1f);
+
+            Audio.rolloffMode = AudioRolloffMode.Custom;
+            Audio.SetCustomCurve(AudioSourceCurveType.CustomRolloff, curve);
+
+            Plugin.Log.LogInfo(
+                $"Audio falloff: 100% within {full:F1}m, {FalloffAt(4f, full, max) * 100f:F0}% at 4m, " +
+                $"{FalloffAt(8f, full, max) * 100f:F0}% at 8m, silent at {max:F0}m.");
+            return true;
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning($"Custom audio falloff unavailable ({e.Message}); using logarithmic rolloff.");
+            return false;
+        }
     }
 
     // --- Construction helpers -------------------------------------------------------

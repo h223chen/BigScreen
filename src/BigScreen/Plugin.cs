@@ -33,13 +33,16 @@ public class Plugin : BasePlugin
     internal static ConfigEntry<int> UiFontSize;
     internal static ConfigEntry<float> Volume;
     internal static ConfigEntry<float> AudioMaxDistance;
+    internal static ConfigEntry<float> AudioFullVolumeRadius;
     internal static ConfigEntry<float> ScreenWidthMeters;
+    internal static ConfigEntry<float> ScreenGroundClearance;
     internal static ConfigEntry<int> RenderWidth;
     internal static ConfigEntry<int> RenderHeight;
     internal static ConfigEntry<string> YtDlpPath;
     internal static ConfigEntry<bool> YtDlpAutoDownload;
     internal static ConfigEntry<string> FormatSelector;
     internal static ConfigEntry<string> ExtractorArgs;
+    internal static ConfigEntry<string> CookiesFromBrowser;
     internal static ConfigEntry<float> DriftTolerance;
     internal static ConfigEntry<bool> GuestsCanControl;
     internal static ConfigEntry<bool> AutoPlay;
@@ -55,6 +58,7 @@ public class Plugin : BasePlugin
     internal static ConfigEntry<string> DevDirectUrl;
     internal static ConfigEntry<bool> AutoDismissMenus;
     internal static ConfigEntry<string> SpawnPosition;
+    internal static ConfigEntry<string> ScreenPose;
 
     private Harmony _harmony;
 
@@ -74,13 +78,28 @@ public class Plugin : BasePlugin
         Volume = Config.Bind("Audio", "Volume", 0.8f,
             new ConfigDescription("Local playback volume for the screen's audio (0-1). Only affects you.",
                 new AcceptableValueRange<float>(0f, 1f)));
-        AudioMaxDistance = Config.Bind("Audio", "MaxDistance", 40f,
+        AudioMaxDistance = Config.Bind("Audio", "MaxDistance", 25f,
             new ConfigDescription("Distance in meters at which the screen's audio fades to silence.",
                 new AcceptableValueRange<float>(5f, 200f)));
+        AudioFullVolumeRadius = Config.Bind("Audio", "FullVolumeRadius", 1.5f,
+            new ConfigDescription("Distance in meters within which the screen plays at full volume. This is " +
+                                  "the main control over how local the sound feels: beyond it the volume " +
+                                  "falls off as 1/distance, so halving this roughly halves the volume you " +
+                                  "hear at any given spot. At the default 1.5 m you hear about a third of " +
+                                  "full volume standing 4 m back. Raise it to fill more of the area.",
+                new AcceptableValueRange<float>(0.5f, 20f)));
 
         ScreenWidthMeters = Config.Bind("Screen", "WidthMeters", 4f,
             new ConfigDescription("Physical width of the screen in the world (16:9, so height follows).",
                 new AcceptableValueRange<float>(1f, 20f)));
+        ScreenGroundClearance = Config.Bind("Screen", "GroundClearance", 0.6f,
+            new ConfigDescription("How high the bottom edge of the picture sits above the spot the screen " +
+                                  "was placed at, in meters. Lower this to bring the screen down; 0 puts it " +
+                                  "on the ground and negative values sink it. The stand hides itself when " +
+                                  "there is no gap left for it. Editing this file mid-game does nothing - " +
+                                  "BepInEx does not re-read it - so use the panel's Raise/Lower buttons, " +
+                                  "which write the value back here.",
+                new AcceptableValueRange<float>(-2f, 5f)));
         RenderWidth = Config.Bind("Screen", "RenderWidth", 1280,
             "Width of the texture the video is decoded into. 1280x720 is plenty for a 4 m screen.");
         RenderHeight = Config.Bind("Screen", "RenderHeight", 720,
@@ -101,6 +120,14 @@ public class Plugin : BasePlugin
             "available'. The android client still serves format 18, the muxed H.264+AAC MP4 that Unity's " +
             "VideoPlayer needs. If YouTube blocks this client too, try tv / ios / web_safari / mweb, or " +
             "clear this to use yt-dlp's own defaults.");
+
+        CookiesFromBrowser = Config.Bind("YtDlp", "CookiesFromBrowser", "",
+            "Passed to yt-dlp as --cookies-from-browser. Leave empty to request anonymously. " +
+            "YouTube blocks repeated anonymous requests from one address with 'Sign in to confirm " +
+            "you're not a bot'; naming the browser you watch YouTube in (chrome, firefox, edge, " +
+            "brave, vivaldi, opera, safari, chromium) lets yt-dlp reuse your signed-in session and " +
+            "clears that. yt-dlp reads that browser's cookie database directly; nothing is sent " +
+            "anywhere except to YouTube, exactly as your browser would.");
 
         DriftTolerance = Config.Bind("Sync", "DriftToleranceSeconds", 1.0f,
             new ConfigDescription("How far your playback may drift from the host's timeline before we re-seek.",
@@ -132,9 +159,16 @@ public class Plugin : BasePlugin
             "Needed for an unattended test run; nothing else can get past those screens.");
 
         SpawnPosition = Config.Bind("Dev", "SpawnPosition", "",
-            "Teleport to these world coordinates once after entering a session, as \"x,y,z\". " +
+            "Teleport to this pose once after entering a session, as \"x,y,z\" or \"x,y,z,yaw\". " +
             "Empty disables it. Use the panel's 'Set spawn here' button to fill this in from " +
-            "where you are standing.");
+            "where you are standing and which way you are looking. The yaw matters: the screen " +
+            "is auto-placed in front of you, so without one it lands somewhere different on " +
+            "every run.");
+
+        ScreenPose = Config.Bind("Dev", "ScreenPose", "",
+            "Place the screen at this exact pose on an automated run, as \"x,y,z,yaw\". Empty means " +
+            "'4 m in front of wherever the player is looking', which lands somewhere different every " +
+            "run. Fill it in to pin the screen to a spot you chose.");
 
         DevDirectUrl = Config.Bind("Dev", "DirectUrl", "",
             "Skip yt-dlp and hand this URL straight to the VideoPlayer. Must be a progressive MP4 " +

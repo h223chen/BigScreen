@@ -20,7 +20,12 @@ internal interface IVideoBackend : IDisposable
     double Duration { get; }    // 0 when unknown
     string Error { get; }       // non-null once the backend gave up on the current URL
 
-    void Load(string directUrl);
+    /// <summary>
+    /// Starts preparing a stream. <paramref name="knownDurationSeconds"/> is the length the
+    /// resolver reported, or 0 if nobody knows; a backend may use it when the player itself
+    /// does not report a length.
+    /// </summary>
+    void Load(string directUrl, double knownDurationSeconds);
     void Play();
     void Pause();
     void Seek(double seconds);

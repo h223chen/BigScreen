@@ -91,19 +91,33 @@ internal static class AutoStart
 
     // --- Spawn position ---------------------------------------------------------------
 
-    /// <summary>Parses "x,y,z". Returns false for anything else, including empty.</summary>
-    private static bool TryParsePosition(string text, out Vector3 position)
+    /// <summary>
+    /// Parses "x,y,z" or "x,y,z,yaw". Returns false for anything else, including empty.
+    ///
+    /// The yaw is optional so a spawn recorded before this existed still works; without it
+    /// the player keeps whatever direction they happened to be facing, which makes the
+    /// auto-placed screen land somewhere different on every run.
+    /// </summary>
+    private static bool TryParsePose(string text, out Vector3 position, out float yaw, out bool hasYaw)
     {
         position = Vector3.zero;
+        yaw = 0f;
+        hasYaw = false;
         if (string.IsNullOrWhiteSpace(text)) return false;
 
         var parts = text.Split(',');
-        if (parts.Length != 3) return false;
+        if (parts.Length != 3 && parts.Length != 4) return false;
 
         var culture = System.Globalization.CultureInfo.InvariantCulture;
-        if (!float.TryParse(parts[0].Trim(), System.Globalization.NumberStyles.Float, culture, out float x)) return false;
-        if (!float.TryParse(parts[1].Trim(), System.Globalization.NumberStyles.Float, culture, out float y)) return false;
-        if (!float.TryParse(parts[2].Trim(), System.Globalization.NumberStyles.Float, culture, out float z)) return false;
+        const System.Globalization.NumberStyles Float = System.Globalization.NumberStyles.Float;
+        if (!float.TryParse(parts[0].Trim(), Float, culture, out float x)) return false;
+        if (!float.TryParse(parts[1].Trim(), Float, culture, out float y)) return false;
+        if (!float.TryParse(parts[2].Trim(), Float, culture, out float z)) return false;
+        if (parts.Length == 4)
+        {
+            if (!float.TryParse(parts[3].Trim(), Float, culture, out yaw)) return false;
+            hasYaw = true;
+        }
 
         position = new Vector3(x, y, z);
         return true;
@@ -117,7 +131,7 @@ internal static class AutoStart
     private static void TickSpawn()
     {
         if (_spawnDone) return;
-        if (!TryParsePosition(Plugin.SpawnPosition.Value, out var target)) { _spawnDone = true; return; }
+        if (!TryParsePose(Plugin.SpawnPosition.Value, out var target, out float yaw, out bool hasYaw)) { _spawnDone = true; return; }
         if (Time.unscaledTime - _sessionSeenAt < Plugin.AutoLoadDelay.Value) return;
 
         try
@@ -129,8 +143,10 @@ internal static class AutoStart
             if (grease == null) return;
 
             _spawnDone = true;
-            grease.Teleport(target, pc.transform.rotation, true);
-            Plugin.Log.LogInfo($"Spawn: teleported to ({target.x:F2}, {target.y:F2}, {target.z:F2}).");
+            var rotation = hasYaw ? Quaternion.Euler(0f, yaw, 0f) : pc.transform.rotation;
+            grease.Teleport(target, rotation, true);
+            Plugin.Log.LogInfo($"Spawn: teleported to ({target.x:F2}, {target.y:F2}, {target.z:F2})"
+                               + (hasYaw ? $", yaw {yaw:F1}." : ", keeping current facing (no yaw recorded)."));
         }
         catch (Exception e)
         {
@@ -260,7 +276,14 @@ internal static class AutoStart
         // The screen has to exist before a video means anything.
         if (!controller.Session.State.HasScreen)
         {
-            controller.UserPlaceScreen();
+            // A recorded screen pose is exact and survives a restart. Falling back to
+            // "4 m in front of the player" puts it somewhere different on every run: the
+            // game's teleport does not set camera yaw, so where the player looks at spawn
+            // is not ours to control.
+            if (TryParsePose(Plugin.ScreenPose.Value, out var screenPos, out float screenYaw, out bool hasYaw) && hasYaw)
+                controller.PlaceScreenAt(screenPos, screenYaw);
+            else
+                controller.UserPlaceScreen();
             return;
         }
 

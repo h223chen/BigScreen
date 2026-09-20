@@ -194,6 +194,11 @@ internal static class YtDlp
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
+            // yt-dlp writes UTF-8. Without this the console's legacy codepage mangles any
+            // non-ASCII character, so a video title or an error message comes back with
+            // "you're" rendered as "youÆre".
+            StandardOutputEncoding = System.Text.Encoding.UTF8,
+            StandardErrorEncoding = System.Text.Encoding.UTF8,
         };
         psi.ArgumentList.Add("--no-playlist");
         psi.ArgumentList.Add("--no-warnings");
@@ -208,6 +213,15 @@ internal static class YtDlp
         {
             psi.ArgumentList.Add("--extractor-args");
             psi.ArgumentList.Add(extractorArgs.Trim());
+        }
+        // YouTube gates repeated anonymous requests from one address behind "Sign in to
+        // confirm you're not a bot". Cookies from a signed-in browser make the request look
+        // like that account rather than an anonymous client, which is what clears it.
+        var cookieBrowser = Plugin.CookiesFromBrowser.Value;
+        if (!string.IsNullOrWhiteSpace(cookieBrowser))
+        {
+            psi.ArgumentList.Add("--cookies-from-browser");
+            psi.ArgumentList.Add(cookieBrowser.Trim());
         }
         psi.ArgumentList.Add("-f");
         psi.ArgumentList.Add(Plugin.FormatSelector.Value);
@@ -236,11 +250,7 @@ internal static class YtDlp
             if (run.ExitCode != 0)
             {
                 var line = FirstUsefulLine(stderr) ?? $"exit code {run.ExitCode}";
-                result.Error = "yt-dlp failed: " + line +
-                               (line.Contains("not available", StringComparison.OrdinalIgnoreCase)
-                                   ? " (YouTube is refusing to list formats for this player client. Try 'Update yt-dlp' " +
-                                     "in the panel, then change YtDlp.ExtractorArgs in the config - " +
-                                     "youtube:player_client=tv / ios / web_safari are the usual alternatives.)" : "");
+                result.Error = "yt-dlp failed: " + line + HintFor(line);
                 return result;
             }
 
@@ -306,6 +316,35 @@ internal static class YtDlp
         {
             return "Update failed: " + e.Message;
         }
+    }
+
+    /// <summary>
+    /// Turns yt-dlp's own error text into something that says what to do about it. The two
+    /// failures worth explaining are the ones YouTube actually serves us.
+    /// </summary>
+    private static string HintFor(string error)
+    {
+        if (error.Contains("not a bot", StringComparison.OrdinalIgnoreCase)
+            || error.Contains("Sign in to confirm", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.IsNullOrWhiteSpace(Plugin.CookiesFromBrowser.Value)
+                ? " (YouTube is rate-limiting anonymous requests from this address. Set " +
+                  "YtDlp.CookiesFromBrowser in the config to the browser you watch YouTube in - " +
+                  "chrome, firefox, edge or brave - so yt-dlp can use your signed-in session. " +
+                  "Otherwise wait an hour or so and it clears on its own.)"
+                : $" (Cookies from '{Plugin.CookiesFromBrowser.Value}' were sent but YouTube still refused. " +
+                  "Check you are signed in to YouTube in that browser, and that the browser is closed - " +
+                  "it can hold a lock on its own cookie database.)";
+        }
+
+        if (error.Contains("not available", StringComparison.OrdinalIgnoreCase))
+        {
+            return " (YouTube is refusing to list formats for this player client. Try 'Update yt-dlp' " +
+                   "in the panel, then change YtDlp.ExtractorArgs in the config - " +
+                   "youtube:player_client=tv / ios / web_safari are the usual alternatives.)";
+        }
+
+        return "";
     }
 
     private static string FirstUsefulLine(string text)

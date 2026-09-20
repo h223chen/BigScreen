@@ -53,6 +53,12 @@ public class BigScreenController : MonoBehaviour
     private float _lastSeekAt = -100f;
     private float _nextDiag;
     private bool _wasInSession;
+    private bool _configDirty;
+    private float _nextConfigSave;
+
+    // Writing the config file is main-thread disk I/O. Holding a nudge button would do it
+    // every click, so changes are batched and written at most this often.
+    private const float ConfigSaveIntervalSeconds = 3f;
 
     private const float MinSecondsBetweenSeeks = 2.5f;
 
@@ -84,6 +90,8 @@ public class BigScreenController : MonoBehaviour
                 ReconcileVideo();
                 FollowTimeline();
             }
+
+            FlushConfigIfDue();
 
             if (Plugin.Diagnostics.Value && Time.unscaledTime >= _nextDiag)
             {
@@ -157,15 +165,63 @@ public class BigScreenController : MonoBehaviour
         if (!TryGetLocalPlayerPose(out var pos, out var fwd)) { LastError = "Could not find your character."; return; }
         // Logged so a spawn point can be picked from a spot you actually walked to.
         Plugin.Log.LogInfo($"Your position: ({pos.x:F2}, {pos.y:F2}, {pos.z:F2})  facing ({fwd.x:F2}, {fwd.y:F2}, {fwd.z:F2})");
-        // 4 m in front of the player, facing them. The quad's picture faces local -Z, so we
-        // point +Z away from the player.
-        var screenPos = pos + fwd * 4f;
         float yaw = Quaternion.LookRotation(new Vector3(fwd.x, 0f, fwd.z).normalized, Vector3.up).eulerAngles.y;
-        var req = new Request { Action = Protocol.Action.Place, Position = screenPos, Yaw = yaw };
-        Apply(req);
+        PlaceScreenForViewer(pos, yaw);
     }
 
+    /// <summary>
+    /// Puts the screen 4 m in front of a viewer pose, facing back at it. The quad's picture
+    /// faces local -Z, so the screen takes the viewer's own yaw and its +Z points away.
+    ///
+    /// Separate from <see cref="UserPlaceScreen"/> so an automated run can place from a
+    /// recorded pose rather than from wherever the camera happens to point. The camera is
+    /// not a reliable source at spawn: the game's teleport rotates the character body but
+    /// leaves camera yaw alone, so a recorded yaw never reaches cameraTransform.forward.
+    /// </summary>
+    internal void PlaceScreenForViewer(Vector3 viewerPosition, float viewerYaw)
+    {
+        var fwd = Quaternion.Euler(0f, viewerYaw, 0f) * Vector3.forward;
+        PlaceScreenAt(viewerPosition + fwd * 4f, viewerYaw);
+    }
+
+    /// <summary>Puts the screen at an exact world pose, rather than relative to a viewer.</summary>
+    internal void PlaceScreenAt(Vector3 position, float yaw)
+        => Apply(new Request { Action = Protocol.Action.Place, Position = position, Yaw = yaw });
+
     internal void UserRemoveScreen() => Apply(new Request { Action = Protocol.Action.Remove });
+
+    /// <summary>
+    /// Slides the screen along its own axes rather than the world's, so "left" means left
+    /// as seen from where the screen was placed from, whatever its yaw.
+    ///
+    /// The screen takes the yaw of whoever placed it and its picture faces local -Z, so its
+    /// local +X is that viewer's right and its local +Z points away from them.
+    ///
+    /// Unlike the height, position is shared state: this goes through the host the same way
+    /// placing does, so a guest without control cannot move everyone's screen.
+    /// </summary>
+    internal void UserNudgeScreen(float rightMeters, float forwardMeters)
+    {
+        var s = Session.State;
+        if (!s.HasScreen) { LastError = "There is no screen to move."; return; }
+
+        var delta = Quaternion.Euler(0f, s.ScreenYaw, 0f) * new Vector3(rightMeters, 0f, forwardMeters);
+        PlaceScreenAt(s.ScreenPosition + delta, s.ScreenYaw);
+    }
+
+    /// <summary>
+    /// Raises or lowers the screen by a step. Local only - screen height is each player's
+    /// own geometry, not part of the shared state - and written straight back to the config
+    /// so the height survives a restart.
+    /// </summary>
+    internal void UserNudgeScreenHeight(float deltaMeters)
+    {
+        float height = Mathf.Clamp(Plugin.ScreenGroundClearance.Value + deltaMeters, -2f, 5f);
+        Plugin.ScreenGroundClearance.Value = height;
+        _configDirty = true;
+        // ReconcileScreen re-applies the layout on the next frame.
+        StatusLine = $"Screen height {height:F2} m.";
+    }
 
     /// <summary>
     /// Writes where you are standing into Dev.SpawnPosition, so an unattended run starts
@@ -173,12 +229,15 @@ public class BigScreenController : MonoBehaviour
     /// </summary>
     internal void UserSetSpawnHere()
     {
-        if (!TryGetLocalPlayerPose(out var pos, out _)) { LastError = "Could not find your character."; return; }
+        if (!TryGetLocalPlayerPose(out var pos, out var fwd)) { LastError = "Could not find your character."; return; }
 
+        // Record the direction as well as the spot. The screen is auto-placed relative to
+        // where the player faces, so without a yaw it lands somewhere different every run.
+        float yaw = Quaternion.LookRotation(fwd, Vector3.up).eulerAngles.y;
         var text = string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                                 "{0:F2},{1:F2},{2:F2}", pos.x, pos.y, pos.z);
+                                 "{0:F2},{1:F2},{2:F2},{3:F1}", pos.x, pos.y, pos.z, yaw);
         Plugin.SpawnPosition.Value = text;
-        try { Plugin.Instance.Config.Save(); } catch (Exception e) { Plugin.Log.LogWarning($"Saving the config failed: {e.Message}"); }
+        _configDirty = true;
 
         StatusLine = "Spawn set to " + text;
         Plugin.Log.LogInfo("Spawn set to " + text);
@@ -251,6 +310,7 @@ public class BigScreenController : MonoBehaviour
         {
             case Protocol.Action.Place:
                 Session.Mutate(s => { s.HasScreen = true; s.ScreenPosition = req.Position; s.ScreenYaw = req.Yaw; });
+                RememberScreenPose(req.Position, req.Yaw);
                 break;
             case Protocol.Action.Remove:
                 Session.Mutate(s => { s.HasScreen = false; s.VideoUrl = ""; s.Title = ""; s.Playing = false; s.AnchorVideoTime = 0; });
@@ -286,6 +346,38 @@ public class BigScreenController : MonoBehaviour
                 Session.Mutate(s => { s.VideoUrl = ""; s.Title = ""; s.Playing = false; s.AnchorVideoTime = 0; });
                 break;
         }
+    }
+
+    /// <summary>
+    /// Writes the screen's pose into Dev.ScreenPose so a restart puts it back where it was.
+    /// Host only, because the host is the authority on where the screen is - a guest would
+    /// be recording a pose that the next state broadcast overwrites.
+    ///
+    /// Runs on every placement, including each nudge, so the spot you settle on is already
+    /// saved by the time you stop clicking.
+    /// </summary>
+    private void RememberScreenPose(Vector3 position, float yaw)
+    {
+        Plugin.ScreenPose.Value = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+            "{0:F2},{1:F2},{2:F2},{3:F1}", position.x, position.y, position.z, yaw);
+        _configDirty = true;
+    }
+
+    /// <summary>
+    /// Writes pending config changes, at most once every few seconds.
+    ///
+    /// Config.Save() writes the file synchronously on the main thread. Calling it straight
+    /// from a button handler meant one disk write per click while dragging the screen into
+    /// place; batching keeps that off the input path.
+    /// </summary>
+    private void FlushConfigIfDue()
+    {
+        if (!_configDirty || Time.unscaledTime < _nextConfigSave) return;
+        _configDirty = false;
+        _nextConfigSave = Time.unscaledTime + ConfigSaveIntervalSeconds;
+
+        try { Plugin.Instance.Config.Save(); }
+        catch (Exception e) { Plugin.Log.LogWarning($"Saving the config failed: {e.Message}"); }
     }
 
     private bool OnGuestRequest(Request req, NetworkConnectionToClient from)
@@ -338,6 +430,10 @@ public class BigScreenController : MonoBehaviour
                 _screen.MoveTo(s.ScreenPosition, s.ScreenYaw);
             }
         }
+
+        // Cheap no-op unless the configured height actually changed, so the screen can be
+        // raised or lowered from the config file without re-placing it.
+        _screen?.ApplyLayoutConfig();
     }
 
     private void ReconcileVideo()
@@ -397,10 +493,14 @@ public class BigScreenController : MonoBehaviour
                 return;
             }
             Plugin.Log.LogInfo($"Resolved '{r.Title}' ({r.Duration:F0}s).");
+            // The stream URL is what actually decides whether playback works, so describe it.
+            // Logged as host + itag + mime rather than in full: the whole googlevideo URL is
+            // ~1100 characters of signed query string and contains a signature.
+            Plugin.Log.LogInfo("Stream: " + DescribeStreamUrl(r.DirectUrl));
             StatusLine = $"Loading '{r.Title}'...";
             _loadedPageUrl = pageUrl;
             _pendingInitialSeek = true;
-            _video.Load(r.DirectUrl);
+            _video.Load(r.DirectUrl, r.Duration);
             if (Session.IsHost && Session.State.VideoUrl == pageUrl && Session.State.Title != r.Title)
                 Session.Mutate(x => x.Title = r.Title);
         });
@@ -508,6 +608,35 @@ public class BigScreenController : MonoBehaviour
 
     // --- Helpers ------------------------------------------------------------------------------
 
+    /// <summary>
+    /// A one-line summary of a stream URL for the log: host, plus the few query parameters
+    /// that say whether Unity can play it. Never logs the whole URL - googlevideo links are
+    /// signed and IP-bound, so the signature has no business in a log people paste around.
+    /// </summary>
+    private static string DescribeStreamUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return "(none)";
+        try
+        {
+            var uri = new Uri(url);
+            var parts = new System.Collections.Generic.List<string> { uri.Host, $"{url.Length} chars" };
+            foreach (var pair in uri.Query.TrimStart('?').Split('&'))
+            {
+                var eq = pair.IndexOf('=');
+                if (eq <= 0) continue;
+                var key = pair[..eq];
+                // itag is the format number, mime the container Media Foundation will see.
+                if (key is "itag" or "mime" or "dur")
+                    parts.Add(key + "=" + Uri.UnescapeDataString(pair[(eq + 1)..]));
+            }
+            return string.Join("  ", parts);
+        }
+        catch
+        {
+            return $"({url.Length} chars, unparseable)";
+        }
+    }
+
     private static double SafeNetTime()
     {
         try { return NetworkTime.time; }
@@ -564,6 +693,9 @@ public class BigScreenController : MonoBehaviour
     internal void ResetSession(string reason)
     {
         Plugin.Log.LogInfo($"Reset ({reason}).");
+        // Leaving the lobby (or unloading) is the last chance to persist a pending change.
+        _nextConfigSave = 0f;
+        FlushConfigIfDue();
         TearDownScreen();
         Session.Reset();
         StatusLine = "Idle.";

@@ -27,10 +27,17 @@ internal sealed class UnityVideoBackend : IVideoBackend
     private bool _loaded;
     private bool _wasReady;
     private float _prepareStarted;
+    private float _readyAt;
+    private bool _metadataLogged;
+    private double _knownDuration;
     private float _volume = 1f;
     private string _error;
 
     private const float PrepareTimeoutSeconds = 45f;
+
+    // How long after isPrepared we keep checking whether the player has filled in width,
+    // height and length. See the note on Duration.
+    private const float MetadataGraceSeconds = 5f;
 
     public UnityVideoBackend(GameObject host, AudioSource audio, RenderTexture target)
     {
@@ -44,13 +51,34 @@ internal sealed class UnityVideoBackend : IVideoBackend
     public bool IsReady => _loaded && _error == null && _player != null && _player.isPrepared;
     public bool IsPlaying => IsReady && _player.isPlaying;
     public double Time => IsReady ? _player.time : 0.0;
-    public double Duration => IsReady ? _player.length : 0.0;
+
+    /// <summary>
+    /// The video's length. Prefers what the player reports, falling back to the length the
+    /// resolver gave us.
+    ///
+    /// The player does not have width, height or length at the moment isPrepared goes true;
+    /// they appear a frame or two later. Reading them live (rather than caching them on the
+    /// isPrepared edge) is what makes this correct. The fallback covers a stream that never
+    /// publishes a length at all, which would otherwise break end-of-video detection and
+    /// seek clamping and leave the panel showing "?" for the total.
+    /// </summary>
+    public double Duration
+    {
+        get
+        {
+            if (!IsReady) return 0.0;
+            double reported = _player.length;
+            return reported > 0.01 ? reported : _knownDuration;
+        }
+    }
+
     public string Error => _error;
 
-    public void Load(string directUrl)
+    public void Load(string directUrl, double knownDurationSeconds)
     {
         Stop();
         _error = null;
+        _knownDuration = knownDurationSeconds > 0 ? knownDurationSeconds : 0.0;
 
         try
         {
@@ -84,6 +112,7 @@ internal sealed class UnityVideoBackend : IVideoBackend
 
             _loaded = true;
             _wasReady = false;
+            _metadataLogged = false;
             _prepareStarted = UnityEngine.Time.unscaledTime;
             Util.Trace.Write("VideoPlayer: Prepare returned"); Plugin.Log.LogInfo("VideoPlayer preparing stream...");
         }
@@ -152,7 +181,7 @@ internal sealed class UnityVideoBackend : IVideoBackend
     public void Seek(double seconds)
     {
         if (!IsReady) return;
-        double len = _player.length;
+        double len = Duration;
         if (len > 0 && seconds > len - 0.25) seconds = Math.Max(0, len - 0.25);
         if (seconds < 0) seconds = 0;
         _player.time = seconds;
@@ -182,7 +211,25 @@ internal sealed class UnityVideoBackend : IVideoBackend
         if (ready && !_wasReady)
         {
             _wasReady = true;
-            Plugin.Log.LogInfo($"Stream ready: {_player.width}x{_player.height}, {_player.length:F1}s.");
+            _readyAt = UnityEngine.Time.unscaledTime;
+            // Deliberately no dimensions here: they are not populated yet, and logging them
+            // at this point reported "0x0, 0.0s" for every video and sent an earlier session
+            // hunting a playback bug that did not exist.
+            Plugin.Log.LogInfo("Stream ready.");
+        }
+        else if (ready && !_metadataLogged)
+        {
+            // width/height/length land a frame or two after isPrepared. Log them once they
+            // do, or say so if they never arrive and Duration is falling back.
+            bool haveMetadata = _player.length > 0.01 || _player.width > 0;
+            if (haveMetadata || UnityEngine.Time.unscaledTime - _readyAt > MetadataGraceSeconds)
+            {
+                _metadataLogged = true;
+                if (haveMetadata)
+                    Plugin.Log.LogInfo($"Stream metadata: {_player.width}x{_player.height}, {_player.length:F1}s.");
+                else
+                    Plugin.Log.LogInfo($"Stream published no metadata; using the resolver's duration ({_knownDuration:F0}s).");
+            }
         }
         else if (!ready && UnityEngine.Time.unscaledTime - _prepareStarted > PrepareTimeoutSeconds)
         {
