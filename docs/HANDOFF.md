@@ -1,5 +1,21 @@
 # Handoff: next steps for an agent with the game installed
 
+> **Milestones 1 and most of 2 are done (2026-09-19).** This document is kept for the record;
+> read the status notes below before following any step literally.
+>
+> - **Milestone 1 complete.** Builds against Big Walk (Unity 6000.3.17f1,
+>   BepInEx 6.0.0-be.755), deploys, loads.
+> - **Every interop assumption in the table below was CORRECT.** The predicted "handful of
+>   naming fixes" did not materialise - not one member name was wrong. The two compile errors
+>   were toolchain artefacts, not API mismatches (see `ARCHITECTURE.md`, "Decisions taken
+>   during the first real run").
+> - **Milestone 2 mostly done.** Plugin loads, Mirror handlers register, screen places,
+>   renders and tears down. Video playback is the one step still unverified.
+> - **All three risks resolved.** Risks 1 and 3 did not occur; Risk 2 occurred in the form its
+>   fallback already handled. Each is annotated in `ARCHITECTURE.md`.
+> - Use `.\scripts\game-state.ps1` to check whether the game is running, whether it is running
+>   modded, and what BigScreen logged - rather than asking the user.
+
 Everything below assumes a Windows machine with Big Walk (Steam), a mod manager (Gale or
 r2modman) with BepInExPack IL2CPP installed in a profile, the game launched once with that
 profile so `BepInEx\interop\` exists, and .NET SDK 8+ on PATH. Nothing here has been run yet;

@@ -1,7 +1,21 @@
 # First-launch checklist
 
-The code has not run inside the game yet. Work through this in order; each step either
-confirms an assumption or points at the exact place to change.
+Work through this in order; each step either confirms an assumption or points at the exact
+place to change.
+
+> **Status as of 2026-09-19** (Unity 6000.3.17f1, BepInEx 6.0.0-be.755):
+>
+> | Section | State |
+> | --- | --- |
+> | 0. Before building | **done** - interop generated, `UnityEngine.VideoModule.dll` present |
+> | 1. Build and load | **done** - `BigScreen v0.1.0 loaded.`, no exceptions, both Harmony patches applied |
+> | 2. Solo hosted lobby | **mostly done** - F8 panel, Mirror handlers, screen place/render/remove, lobby teardown all verified. **Video playback still unverified.** Shader resolved to `Sprites/Default`. |
+> | 3. Two modded players | **not started** - needs a second machine or Steam account |
+> | 4. Rough edges | not started |
+>
+> Known open items: the F8 panel's UX is poor and clicks are unreliable (see
+> `TASK_LIST.md`); one unexplained game freeze occurred and has not recurred.
+> `.\scripts\game-state.ps1` reports live game/mod/plugin state and the last session's log.
 
 ## 0. Before building
 

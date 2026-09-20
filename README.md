@@ -5,10 +5,12 @@ The host places a screen somewhere on the island, pastes a YouTube link, and eve
 the mod sees and hears the same video at the same moment. Sit around it, heckle, walk off
 and let the sound fade behind you.
 
-> **Status: pre-alpha.** The code is written but has not yet been run inside the game.
-> See [docs/PLAYTEST.md](docs/PLAYTEST.md) for the first-launch checklist and
-> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the three things most likely to need
-> adjusting once it has.
+> **Status: alpha, runs in-game.** As of 2026-09-19 the mod compiles against Big Walk
+> (Unity 6000.3.17f1, BepInEx 6.0.0-be.755), loads, hooks Mirror, and places a working screen
+> that syncs and tears down correctly. Video playback is the remaining unverified step.
+> All three risks in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) are now resolved or retired
+> and annotated with what actually happened; [docs/PLAYTEST.md](docs/PLAYTEST.md) tracks what
+> is still unverified.
 
 ## How it works, in one paragraph
 
@@ -91,6 +93,10 @@ New to Unity or game modding? Start with [docs/MODDING-PRIMER.md](docs/MODDING-P
 - [docs/MODDING-PRIMER.md](docs/MODDING-PRIMER.md): how Big Walk modding works, the
   toolchain, the dev loop, publishing.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): design, sync protocol, risks, roadmap.
+- [docs/MIRROR-MESSAGING.md](docs/MIRROR-MESSAGING.md): how the networking works and why it
+  bypasses Mirror's public message API, for readers new to Mirror.
+- [docs/TASK_LIST.md](docs/TASK_LIST.md): planned improvements, and what the game's own
+  interaction systems offer.
 - [docs/PLAYTEST.md](docs/PLAYTEST.md): what to verify on the first in-game runs.
 
 ## Credits

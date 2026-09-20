@@ -85,6 +85,12 @@ Every frame, `BigScreenController` makes the local world match `SyncState`:
 
 ### Risk 1: Unity's VideoModule may be stripped from the build
 
+> **DID NOT HAPPEN — verified 2026-09-19.** `UnityEngine.VideoModule.dll` is present in the
+> generated interop (81 KB). Better still, the game *itself* uses Unity's VideoPlayer:
+> `VideoPlayerAudioAssigner` and `PeckEffectPipeVideoAudio` exist in `Assembly-CSharp`, which
+> is presumably why the module survived stripping. The ffmpeg backend below is therefore not
+> needed for v0.1 and stays a future HD option rather than a fallback.
+
 IL2CPP builds strip engine modules the game never uses. If `BepInEx\interop\UnityEngine.VideoModule.dll`
 does not exist, `UnityEngine.Video.VideoPlayer` does not exist at runtime and the Unity backend
 cannot work. The build prints a warning if the file is missing.
@@ -101,6 +107,21 @@ software decoding on the CPU. If Risk 1 materialises, this becomes the primary b
 
 ### Risk 2: hooking Mirror's handler table
 
+> **PARTIALLY HAPPENED — verified 2026-09-19.** Registration works; both server and client
+> handlers install successfully. But the delegate signature guess was wrong in the way this
+> section anticipated: Big Walk's Mirror needs the **legacy `NetworkConnection`** first
+> parameter, not the modern `NetworkConnectionToClient`. `MirrorChannel.Convert` tries modern
+> first and falls back, and the fallback is what fires:
+>
+> ```
+> Modern delegate signature rejected (... Mirror.NetworkConnection !=
+> Mirror.NetworkConnectionToClient); trying legacy signature.
+> Server message handler registered.
+> ```
+>
+> Without that fallback path sync would not work at all. Keep both attempts. The Dissonance
+> text-chat fallback below was not needed. See `docs/MIRROR-MESSAGING.md`.
+
 `NetworkServer.handlers` / `NetworkClient.handlers` and `NetworkMessageDelegate` are Mirror
 internals. They have been stable since 2021 but a Mirror upgrade inside a Big Walk patch could
 rename them or change the delegate's first parameter type (`NetworkConnectionToClient` today,
@@ -114,6 +135,12 @@ of Mirror internals.
 
 ### Risk 3: shaders and primitive meshes
 
+> **DID NOT HAPPEN — verified 2026-09-19.** `Shader.Find` succeeded on the third candidate:
+> `Screen shader: Sprites/Default`. No material cloning was required, the hand-built meshes
+> render, and the screen is created and destroyed cleanly (`Reset (left lobby)`). The two
+> URP candidates ahead of it in the list do not exist in this build, so leave `Sprites/Default`
+> in the list even if the ordering is revisited.
+
 Only shaders the game itself references survive the build. `ScreenObject` tries a list
 (`Universal Render Pipeline/Unlit`, `Unlit/Texture`, `Sprites/Default`, ...) and, if none exists,
 clones a material already rendering in the scene so the pipeline is guaranteed to accept it.
@@ -121,6 +148,61 @@ Meshes are built by hand because `GameObject.CreatePrimitive` depends on built-i
 that may be absent. If the screen appears but is black/pink, this is where to look; the log
 prints which shader was used. UnityExplorer will show you which shader the game's own flat
 surfaces use; add that name to the top of the candidate list.
+
+## Decisions taken during the first real run (2026-09-19)
+
+These were not anticipated in the original design. Each one is a rule, not just a patch.
+
+### Unity 6 "injected" string bindings cannot be called through the interop proxy
+
+Unity 6 marshals strings for its internal-call bindings through a `ManagedSpanWrapper`.
+Il2CppInterop reproduces that code in its generated proxies, and the reproduction calls
+`Il2CppSystem.ReadOnlySpan<char>.GetPinnableReference()`. That method exists in the generated
+metadata but IL2CPP inlined the real one away, so there is no callable native counterpart and
+the proxy throws at runtime:
+
+```
+MissingMethodException: Method not found:
+  '!0 ByRef Il2CppSystem.ReadOnlySpan`1.GetPinnableReference()'
+   at UnityEngine.Video.VideoPlayer.set_url(String value)
+```
+
+**This is a pattern, not a one-off.** Any Unity API whose proxy resolves an `_Injected`
+internal call *and takes a string* will fail the same way. `VideoPlayer.url` is simply the
+first one we happened to need. Symptoms to recognise: a `MissingMethodException` naming a span
+method, thrown from inside a property setter you did not write.
+
+The workaround, in `UnityVideoBackend.SetUrl`: resolve the same internal call ourselves and
+hand it the 16-byte `{ IntPtr begin; int length }` struct it expects, built by pinning a
+managed string in our own assembly (where the real .NET 6 BCL applies and the problem does not
+exist). Ordinary IL2CPP methods that take strings — `Shader.Find`, `Material.SetTexture` — are
+unaffected and need no special handling.
+
+### yt-dlp needs an explicit player client
+
+YouTube now returns **no media formats at all** to yt-dlp's default player clients — only
+storyboard images — which surfaces misleadingly as "Requested format is not available". No
+format selector can fix that, and neither can updating yt-dlp.
+
+`YtDlp.ExtractorArgs` (default `youtube:player_client=android`) is passed as
+`--extractor-args`. It is configuration rather than a constant because YouTube rotates which
+clients it starves; when `android` stops working, `tv` / `ios` / `web_safari` / `mweb` are the
+alternatives to try, and a config edit beats a rebuild.
+
+### We declare the nullable attributes ourselves
+
+Il2CppInterop emits `NullableAttribute` and `NullableContextAttribute` into
+`UnityEngine.CoreModule.dll`. Because we reference that assembly, Roslyn binds to those when
+emitting metadata for `async` lambdas, and they lack the constructors it needs (`CS0656`).
+`Util/CompilerShims.cs` declares both — a declaration inside the compilation wins. Do not
+delete it because it looks unused; nothing references it directly, the compiler emits it.
+
+### Toolchain is pinned, not floating
+
+.NET SDK 10 locally, CI bumped to match (`10.0.x`), and `<LangVersion>` pinned to `12.0`
+instead of `latest` so the accepted C# version cannot drift with whoever's SDK is newest.
+`TargetFramework` stays `net6.0` — that is not a stale choice, it is what BepInEx 6 IL2CPP
+hosts plugins on, confirmed by the loader's own boot line (`Runtime version: 6.0.7`).
 
 ## Smaller known gaps
 
