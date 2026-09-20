@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Threading.Tasks;
 using BigScreen.Net;
@@ -72,6 +72,7 @@ public class BigScreenController : MonoBehaviour
         {
             HandleInput();
             Session.Tick();
+            Dev.AutoStart.Tick(this);
 
             bool inSession = NetworkServer.active || NetworkClient.active;
             if (_wasInSession && !inSession) ResetSession("left lobby");
@@ -99,10 +100,38 @@ public class BigScreenController : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Unity calls this from native code, so an exception must never leave it. Our type is
+    /// injected into IL2CPP, and letting a managed exception unwind into native Unity frames
+    /// takes the process down with a fatal access violation rather than a logged error.
+    /// The same applies to Update; both swallow and log instead.
+    /// </summary>
     private void OnGUI()
     {
         if (!_panelVisible) return;
-        _panel.Draw();
+
+        // Logged before GUI.Window is called. Clicking Test MP4 produces no output at all,
+        // not even the first line of the window callback, while every other button in the
+        // same panel logs normally. If this line is also missing for that click, the fault
+        // is above our GUI code entirely.
+        // Log every event that is not routine drawing. The narrower MouseDown/MouseUp filter
+        // never fired here even though the same check works inside the window callback, so
+        // this records whatever type actually arrives - including none, if Event.current is
+        // null at this level.
+        var ev = Event.current;
+        if (ev == null) Plugin.Log.LogInfo("OnGUI: Event.current is null");
+        else if (ev.type != EventType.Layout && ev.type != EventType.Repaint
+                 && ev.type != EventType.MouseMove && ev.type != EventType.MouseDrag)
+            Plugin.Log.LogInfo($"OnGUI: {ev.type} at {ev.mousePosition}");
+
+        try
+        {
+            _panel.Draw();
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogError($"Panel draw failed: {e}");
+        }
     }
 
     // --- Input / panel ---------------------------------------------------------------
@@ -140,6 +169,8 @@ public class BigScreenController : MonoBehaviour
     internal void UserPlaceScreen()
     {
         if (!TryGetLocalPlayerPose(out var pos, out var fwd)) { LastError = "Could not find your character."; return; }
+        // Logged so a spawn point can be picked from a spot you actually walked to.
+        Plugin.Log.LogInfo($"Your position: ({pos.x:F2}, {pos.y:F2}, {pos.z:F2})  facing ({fwd.x:F2}, {fwd.y:F2}, {fwd.z:F2})");
         // 4 m in front of the player, facing them. The quad's picture faces local -Z, so we
         // point +Z away from the player.
         var screenPos = pos + fwd * 4f;
@@ -150,8 +181,29 @@ public class BigScreenController : MonoBehaviour
 
     internal void UserRemoveScreen() => Apply(new Request { Action = Protocol.Action.Remove });
 
+    /// <summary>
+    /// Writes where you are standing into Dev.SpawnPosition, so an unattended run starts
+    /// from a spot you picked rather than wherever the game drops you.
+    /// </summary>
+    internal void UserSetSpawnHere()
+    {
+        if (!TryGetLocalPlayerPose(out var pos, out _)) { LastError = "Could not find your character."; return; }
+
+        var text = string.Format(System.Globalization.CultureInfo.InvariantCulture,
+                                 "{0:F2},{1:F2},{2:F2}", pos.x, pos.y, pos.z);
+        Plugin.SpawnPosition.Value = text;
+        try { Plugin.Instance.Config.Save(); } catch (Exception e) { Plugin.Log.LogWarning($"Saving the config failed: {e.Message}"); }
+
+        StatusLine = "Spawn set to " + text;
+        Plugin.Log.LogInfo("Spawn set to " + text);
+    }
+
     internal void UserLoad(string pageUrl)
     {
+        // Breadcrumbs: the game has died between this click and StartResolve without
+        // logging anything, so each step writes a line. Logging is set to flush on every
+        // write, so the last line in the log is the last step that completed.
+        Util.Trace.Write($"UserLoad enter: {pageUrl}");
         pageUrl = (pageUrl ?? "").Trim();
         if (!YtDlp.LooksLikeUrl(pageUrl)) { LastError = "Enter a full URL starting with https://"; return; }
         LastError = null;
@@ -160,7 +212,9 @@ public class BigScreenController : MonoBehaviour
             // Be helpful: loading with no screen places one in front of you first.
             UserPlaceScreen();
         }
+        Util.Trace.Write("UserLoad: about to Apply");
         Apply(new Request { Action = Protocol.Action.Load, Text = pageUrl });
+        Util.Trace.Write("UserLoad: Apply returned");
     }
 
     internal void UserTogglePlay() => Apply(new Request { Action = Session.State.Playing ? Protocol.Action.Pause : Protocol.Action.Play });
@@ -171,9 +225,9 @@ public class BigScreenController : MonoBehaviour
     internal void UserUpdateYtDlp()
     {
         StatusLine = "Updating yt-dlp...";
-        Task.Run(async () =>
+        RunOffThread("BigScreen-ytdlp-update", () =>
         {
-            var msg = await YtDlp.UpdateAsync(CancellationToken.None);
+            var msg = YtDlp.Update(CancellationToken.None);
             MainThread.Post(() => { StatusLine = "yt-dlp: " + msg; Plugin.Log.LogInfo("yt-dlp update: " + msg); });
         });
     }
@@ -336,39 +390,73 @@ public class BigScreenController : MonoBehaviour
 
     private void StartResolve(string pageUrl)
     {
+        Util.Trace.Write("StartResolve enter");
         CancelResolve();
         _resolvingPageUrl = pageUrl;
         _resolveCts = new CancellationTokenSource();
         var ct = _resolveCts.Token;
         LastError = null;
+
+        void Complete(YtDlp.Result r) => MainThread.Post(() =>
+        {
+            if (ct.IsCancellationRequested || _resolvingPageUrl != pageUrl) return;
+            _resolvingPageUrl = null;
+            if (_video == null) return; // screen was removed while we were resolving
+            if (!r.Ok)
+            {
+                LastError = r.Error;
+                StatusLine = "Could not load video.";
+                _loadedPageUrl = pageUrl; // don't retry in a loop; a new Load will change the URL/revision
+                Plugin.Log.LogWarning($"Resolve failed: {r.Error}");
+                return;
+            }
+            Plugin.Log.LogInfo($"Resolved '{r.Title}' ({r.Duration:F0}s).");
+            StatusLine = $"Loading '{r.Title}'...";
+            _loadedPageUrl = pageUrl;
+            _pendingInitialSeek = true;
+            _video.Load(r.DirectUrl);
+            if (Session.IsHost && Session.State.VideoUrl == pageUrl && Session.State.Title != r.Title)
+                Session.Mutate(x => x.Title = r.Title);
+        });
+
+        // A URL that already points at a media file needs no resolving, and Dev.DirectUrl forces
+        // the same path for any page URL. Both skip yt-dlp completely, which also separates two
+        // things that currently fail together: whether the video pipeline works, and whether
+        // running yt-dlp is what kills the process.
+        string directUrl = Plugin.DevDirectUrl.Value;
+        if (string.IsNullOrWhiteSpace(directUrl) && YtDlp.LooksLikeDirectMedia(pageUrl))
+            directUrl = pageUrl;
+
+        if (!string.IsNullOrWhiteSpace(directUrl))
+        {
+            StatusLine = "Loading direct URL (yt-dlp skipped)...";
+            Util.Trace.Write($"StartResolve: direct media, calling Complete: {directUrl.Trim()}");
+            Complete(new YtDlp.Result { Ok = true, Title = "Direct URL", DirectUrl = directUrl.Trim() });
+            return;
+        }
+
         StatusLine = "Resolving stream with yt-dlp...";
         Plugin.Log.LogInfo($"Resolving {pageUrl}");
+        RunOffThread("BigScreen-resolve", () => Complete(YtDlp.Resolve(pageUrl, ct)));
+    }
 
-        Task.Run(async () =>
+    /// <summary>
+    /// Runs work on a dedicated background thread rather than the runtime thread pool.
+    ///
+    /// The mod previously used Task.Run here. The game died twice with a fatal access violation
+    /// inside coreclr.dll while a resolve was in flight, and this was the only concurrency the
+    /// mod owned, so we keep our background work on threads we create ourselves. See the note
+    /// on the YtDlp class. Exceptions are logged here because nothing awaits this work.
+    /// </summary>
+    private static void RunOffThread(string name, Action work)
+    {
+        var thread = new Thread(() =>
         {
-            var r = await YtDlp.ResolveAsync(pageUrl, ct);
-            MainThread.Post(() =>
-            {
-                if (ct.IsCancellationRequested || _resolvingPageUrl != pageUrl) return;
-                _resolvingPageUrl = null;
-                if (_video == null) return; // screen was removed while we were resolving
-                if (!r.Ok)
-                {
-                    LastError = r.Error;
-                    StatusLine = "Could not load video.";
-                    _loadedPageUrl = pageUrl; // don't retry in a loop; a new Load will change the URL/revision
-                    Plugin.Log.LogWarning($"Resolve failed: {r.Error}");
-                    return;
-                }
-                Plugin.Log.LogInfo($"Resolved '{r.Title}' ({r.Duration:F0}s).");
-                StatusLine = $"Loading '{r.Title}'...";
-                _loadedPageUrl = pageUrl;
-                _pendingInitialSeek = true;
-                _video.Load(r.DirectUrl);
-                if (Session.IsHost && Session.State.VideoUrl == pageUrl && Session.State.Title != r.Title)
-                    Session.Mutate(x => x.Title = r.Title);
-            });
-        });
+            try { work(); }
+            catch (Exception e) { Plugin.Log.LogError($"{name} failed: {e}"); }
+        })
+        { IsBackground = true, Name = name };
+        thread.Start();
     }
 
     private void CancelResolve()

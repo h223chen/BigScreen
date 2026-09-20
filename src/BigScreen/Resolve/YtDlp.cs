@@ -16,8 +16,16 @@ namespace BigScreen.Resolve;
 /// bound to the IP address that requested them and expire after a few hours. The host
 /// therefore shares the *page* URL and every peer runs yt-dlp locally.
 ///
-/// Runs entirely on a thread-pool thread and must not touch Unity/IL2CPP objects; the
+/// Runs on a dedicated background thread and must not touch Unity/IL2CPP objects; the
 /// caller marshals the result back with <see cref="Util.MainThread"/>.
+///
+/// Everything here is synchronous on purpose. An earlier version used async/await with
+/// Process.WaitForExitAsync and ReadToEndAsync, and the game died twice with a fatal access
+/// violation inside coreclr.dll (same fault offset both times) while yt-dlp was running.
+/// coreclr only ever runs BepInEx and plugin code - the game itself is IL2CPP - so the fault
+/// was in our code, and this resolve was the only concurrency the mod owned. WaitForExitAsync
+/// sets EnableRaisingEvents, which registers a wait on the runtime thread pool and calls back
+/// on a pool thread; blocking reads on dedicated threads avoid that machinery completely.
 /// </summary>
 internal static class YtDlp
 {
@@ -34,7 +42,7 @@ internal static class YtDlp
     private const string WindowsDownloadUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
     private const string LinuxDownloadUrl = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
 
-    private static readonly SemaphoreSlim DownloadLock = new(1, 1);
+    private static readonly object DownloadLock = new();
 
     public static string PluginDirectory =>
         Path.GetDirectoryName(typeof(YtDlp).Assembly.Location) ?? BepInEx.Paths.PluginPath;
@@ -60,48 +68,110 @@ internal static class YtDlp
             || s.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// True for a URL that already points at a media file, so there is nothing for yt-dlp to
+    /// resolve. Pasting a direct MP4 link should just play it.
+    /// </summary>
+    public static bool LooksLikeDirectMedia(string url)
+    {
+        if (!LooksLikeUrl(url)) return false;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return false;
+
+        var ext = Path.GetExtension(uri.AbsolutePath);
+        return ext.Equals(".mp4", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".m4v", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".mov", StringComparison.OrdinalIgnoreCase)
+            || ext.Equals(".webm", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>Makes sure the binary exists, downloading it if allowed. Thread-safe.</summary>
-    public static async Task<string> EnsureBinaryAsync(CancellationToken ct)
+    public static string EnsureBinary(CancellationToken ct)
     {
         var path = BinaryPath;
         if (File.Exists(path)) return null;
         if (!Plugin.YtDlpAutoDownload.Value)
             return $"yt-dlp not found at {path} and AutoDownload is off. Download it from https://github.com/yt-dlp/yt-dlp/releases and put it there.";
 
-        await DownloadLock.WaitAsync(ct);
-        try
+        lock (DownloadLock)
         {
-            if (File.Exists(path)) return null;
-            var url = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? WindowsDownloadUrl : LinuxDownloadUrl;
-            Plugin.Log.LogInfo($"Downloading yt-dlp from {url} ...");
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            try
+            {
+                if (File.Exists(path)) return null;
+                var url = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? WindowsDownloadUrl : LinuxDownloadUrl;
+                Plugin.Log.LogInfo($"Downloading yt-dlp from {url} ...");
+                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
-            using var http = new HttpClient();
-            http.Timeout = TimeSpan.FromMinutes(3);
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("BigScreen-BigWalkMod/" + Plugin.Version);
-            var bytes = await http.GetByteArrayAsync(url, ct);
-            if (bytes.Length < 1_000_000) return "Downloaded yt-dlp looks too small to be real; refusing to use it.";
+                using var http = new HttpClient();
+                http.Timeout = TimeSpan.FromMinutes(3);
+                http.DefaultRequestHeaders.UserAgent.ParseAdd("BigScreen-BigWalkMod/" + Plugin.Version);
+                // Blocking on a dedicated thread; see the note on this class about async.
+                var bytes = http.GetByteArrayAsync(url, ct).GetAwaiter().GetResult();
+                if (bytes.Length < 1_000_000) return "Downloaded yt-dlp looks too small to be real; refusing to use it.";
 
-            var tmp = path + ".download";
-            await File.WriteAllBytesAsync(tmp, bytes, ct);
-            File.Move(tmp, path, overwrite: true);
-            // Note: under Proton/Wine the runtime reports Windows and uses yt-dlp.exe, which is
-            // the only tested path. A native Linux binary would additionally need chmod +x.
-            Plugin.Log.LogInfo($"yt-dlp saved to {path} ({bytes.Length / 1024 / 1024} MB).");
-            return null;
-        }
-        catch (Exception e)
-        {
-            return "Could not download yt-dlp: " + e.Message;
-        }
-        finally
-        {
-            DownloadLock.Release();
+                var tmp = path + ".download";
+                File.WriteAllBytes(tmp, bytes);
+                File.Move(tmp, path, overwrite: true);
+                // Note: under Proton/Wine the runtime reports Windows and uses yt-dlp.exe, which is
+                // the only tested path. A native Linux binary would additionally need chmod +x.
+                Plugin.Log.LogInfo($"yt-dlp saved to {path} ({bytes.Length / 1024 / 1024} MB).");
+                return null;
+            }
+            catch (Exception e)
+            {
+                return "Could not download yt-dlp: " + e.Message;
+            }
         }
     }
 
+    private sealed class ProcessOutput
+    {
+        public bool Exited;
+        public int ExitCode = -1;
+        public string StdOut = "";
+        public string StdErr = "";
+    }
+
+    /// <summary>
+    /// Runs a process to completion and collects its output, with no async machinery.
+    ///
+    /// Both pipes are drained by their own threads. Reading one stream to the end before the
+    /// other deadlocks as soon as the child fills the pipe it is not being read from, and
+    /// yt-dlp writes progress to stderr while it works.
+    /// </summary>
+    private static ProcessOutput RunProcess(ProcessStartInfo psi, int timeoutSeconds)
+    {
+        var output = new ProcessOutput();
+        using var proc = new Process { StartInfo = psi };
+        proc.Start();
+
+        string stdout = "", stderr = "";
+        var outReader = new Thread(() => { try { stdout = proc.StandardOutput.ReadToEnd(); } catch { } })
+        { IsBackground = true, Name = "BigScreen-ytdlp-stdout" };
+        var errReader = new Thread(() => { try { stderr = proc.StandardError.ReadToEnd(); } catch { } })
+        { IsBackground = true, Name = "BigScreen-ytdlp-stderr" };
+        outReader.Start();
+        errReader.Start();
+
+        output.Exited = proc.WaitForExit(timeoutSeconds * 1000);
+        if (!output.Exited)
+        {
+            try { proc.Kill(entireProcessTree: true); } catch { }
+        }
+
+        // Join gives us the reader threads' writes; the pipes end when the process does.
+        outReader.Join(5000);
+        errReader.Join(5000);
+        output.StdOut = stdout;
+        output.StdErr = stderr;
+        if (output.Exited)
+        {
+            try { output.ExitCode = proc.ExitCode; } catch { }
+        }
+        return output;
+    }
+
     /// <summary>Resolves a page URL to a direct stream URL using the configured format selector.</summary>
-    public static async Task<Result> ResolveAsync(string pageUrl, CancellationToken ct)
+    public static Result Resolve(string pageUrl, CancellationToken ct)
     {
         var result = new Result();
         if (!LooksLikeUrl(pageUrl))
@@ -110,7 +180,7 @@ internal static class YtDlp
             return result;
         }
 
-        var ensureError = await EnsureBinaryAsync(ct);
+        var ensureError = EnsureBinary(ct);
         if (ensureError != null)
         {
             result.Error = ensureError;
@@ -130,6 +200,15 @@ internal static class YtDlp
         psi.ArgumentList.Add("--no-color");
         psi.ArgumentList.Add("--socket-timeout");
         psi.ArgumentList.Add("20");
+        // Without this, YouTube's default player clients return only storyboard images and no
+        // media formats at all, so every selector below fails with "Requested format is not
+        // available". See the ExtractorArgs config entry.
+        var extractorArgs = Plugin.ExtractorArgs.Value;
+        if (!string.IsNullOrWhiteSpace(extractorArgs))
+        {
+            psi.ArgumentList.Add("--extractor-args");
+            psi.ArgumentList.Add(extractorArgs.Trim());
+        }
         psi.ArgumentList.Add("-f");
         psi.ArgumentList.Add(Plugin.FormatSelector.Value);
         // --print implies --simulate: nothing is downloaded. Three lines come back in this order.
@@ -144,33 +223,24 @@ internal static class YtDlp
 
         try
         {
-            using var proc = new Process { StartInfo = psi };
-            proc.Start();
-            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
-            var stderrTask = proc.StandardError.ReadToEndAsync();
-
-            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            timeout.CancelAfter(TimeSpan.FromSeconds(60));
-            try
+            var run = RunProcess(psi, 60);
+            if (!run.Exited)
             {
-                await proc.WaitForExitAsync(timeout.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                try { proc.Kill(entireProcessTree: true); } catch { }
                 result.Error = "yt-dlp took too long (60 s) and was stopped.";
                 return result;
             }
 
-            var stdout = await stdoutTask;
-            var stderr = await stderrTask;
+            var stdout = run.StdOut;
+            var stderr = run.StdErr;
 
-            if (proc.ExitCode != 0)
+            if (run.ExitCode != 0)
             {
-                var line = FirstUsefulLine(stderr) ?? $"exit code {proc.ExitCode}";
+                var line = FirstUsefulLine(stderr) ?? $"exit code {run.ExitCode}";
                 result.Error = "yt-dlp failed: " + line +
                                (line.Contains("not available", StringComparison.OrdinalIgnoreCase)
-                                   ? " (YouTube may have changed formats; try 'Update yt-dlp' in the panel)" : "");
+                                   ? " (YouTube is refusing to list formats for this player client. Try 'Update yt-dlp' " +
+                                     "in the panel, then change YtDlp.ExtractorArgs in the config - " +
+                                     "youtube:player_client=tv / ios / web_safari are the usual alternatives.)" : "");
                 return result;
             }
 
@@ -212,9 +282,9 @@ internal static class YtDlp
     }
 
     /// <summary>Runs `yt-dlp -U` (self-update). YouTube breaks old versions regularly.</summary>
-    public static async Task<string> UpdateAsync(CancellationToken ct)
+    public static string Update(CancellationToken ct)
     {
-        var ensureError = await EnsureBinaryAsync(ct);
+        var ensureError = EnsureBinary(ct);
         if (ensureError != null) return ensureError;
         try
         {
@@ -227,13 +297,10 @@ internal static class YtDlp
                 CreateNoWindow = true,
             };
             psi.ArgumentList.Add("-U");
-            using var proc = new Process { StartInfo = psi };
-            proc.Start();
-            var output = await proc.StandardOutput.ReadToEndAsync();
-            var err = await proc.StandardError.ReadToEndAsync();
-            await proc.WaitForExitAsync(ct);
-            var summary = FirstUsefulLine(output) ?? FirstUsefulLine(err) ?? $"exit code {proc.ExitCode}";
-            return summary;
+
+            var run = RunProcess(psi, 180);
+            if (!run.Exited) return "yt-dlp -U took too long (180 s) and was stopped.";
+            return FirstUsefulLine(run.StdOut) ?? FirstUsefulLine(run.StdErr) ?? $"exit code {run.ExitCode}";
         }
         catch (Exception e)
         {

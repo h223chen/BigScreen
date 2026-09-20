@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using UnityEngine;
+using UnityEngine.Bindings;
 using UnityEngine.Video;
 
 namespace BigScreen.Video;
@@ -53,9 +54,11 @@ internal sealed class UnityVideoBackend : IVideoBackend
 
         try
         {
+            Util.Trace.Write("Load enter");
             _player = _host.GetComponent<VideoPlayer>();
             if (_player == null) _player = _host.AddComponent<VideoPlayer>();
 
+            Util.Trace.Write("Load: VideoPlayer component ready");
             _player.playOnAwake = false;
             _player.isLooping = false;
             _player.skipOnDrop = true;
@@ -65,26 +68,72 @@ internal sealed class UnityVideoBackend : IVideoBackend
             _player.aspectRatio = VideoAspectRatio.FitInside;
 
             // Audio: hand track 0 to our positional AudioSource. Must be configured before Prepare().
+            Util.Trace.Write("Load: value setters done, audio next");
             _player.audioOutputMode = VideoAudioOutputMode.AudioSource;
             _player.controlledAudioTrackCount = 1;
             _player.EnableAudioTrack(0, true);
             _player.SetTargetAudioSource(0, _audio);
             _audio.volume = _volume;
 
+            Util.Trace.Write("Load: audio wired, source next");
             _player.source = VideoSource.Url;
-            _player.url = directUrl;
+            Util.Trace.Write("VideoPlayer: before SetUrl");
+            SetUrl(_player, directUrl);
+            Util.Trace.Write("VideoPlayer: SetUrl returned, before Prepare");
             _player.Prepare();
 
             _loaded = true;
             _wasReady = false;
             _prepareStarted = UnityEngine.Time.unscaledTime;
-            Plugin.Log.LogInfo("VideoPlayer preparing stream...");
+            Util.Trace.Write("VideoPlayer: Prepare returned"); Plugin.Log.LogInfo("VideoPlayer preparing stream...");
         }
         catch (Exception e)
         {
             _error = "VideoPlayer setup failed: " + e.Message;
             Plugin.Log.LogError(_error + "\n" + e);
             _loaded = false;
+        }
+    }
+
+    // Setting VideoPlayer.url through the interop proxy throws on Unity 6:
+    //
+    //   MissingMethodException: Method not found:
+    //     '!0 ByRef Il2CppSystem.ReadOnlySpan`1.GetPinnableReference()'
+    //     at UnityEngine.Video.VideoPlayer.set_url(String value)
+    //
+    // Unity 6 binds a string property in two halves: a managed set_url that packs the string
+    // into a ManagedSpanWrapper, and set_url_Injected that takes that struct and does the real
+    // work. Only the packing half is broken - it calls ReadOnlySpan.GetPinnableReference, which
+    // Il2CppSystem.ReadOnlySpan does not have. The injected half is fine.
+    //
+    // So pack the struct here and call the injected method. Il2CppInterop generates it as a
+    // public static method taking the instance pointer, so this is an ordinary C# call - no
+    // method lookup and no il2cpp_runtime_invoke. ManagedSpanWrapper wants UTF-16 characters,
+    // which is exactly what a pinned C# string is.
+    //
+    // Any other Unity string setter can hit the same problem; the same fix applies.
+    // The first attempt passed player.Pointer as _unity_self and killed the process with an
+    // access violation. That is the IL2CPP managed object pointer; Unity's injected bindings
+    // want the native C++ object, which UnityEngine.Object keeps in m_CachedPtr. The interop
+    // assembly has a proxy for the private GetCachedPtr(), so ask it rather than reading the
+    // field by offset.
+    private static unsafe void SetUrl(VideoPlayer player, string url)
+    {
+        url ??= "";
+
+        // Il2CppInterop regenerates every member as public, so this is a direct call.
+        IntPtr self = player.GetCachedPtr();
+        Util.Trace.Write($"SetUrl: native=0x{self.ToInt64():x} managed=0x{player.Pointer.ToInt64():x} len={url.Length}");
+
+        // A destroyed Unity object has a null native pointer, and handing that to the binding
+        // is another crash rather than an exception.
+        if (self == IntPtr.Zero)
+            throw new InvalidOperationException("The VideoPlayer's native object is gone.");
+
+        fixed (char* chars = url)
+        {
+            var span = new ManagedSpanWrapper(chars, url.Length);
+            VideoPlayer.set_url_Injected(self, ref span);
         }
     }
 

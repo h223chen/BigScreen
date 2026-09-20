@@ -24,10 +24,13 @@ public class Plugin : BasePlugin
     public const string Version = "0.1.0";
 
     internal static Plugin Instance { get; private set; }
-    internal static ManualLogSource Log;
+    // `new` because BasePlugin exposes an instance Log; ours is the static shortcut the
+    // rest of the mod uses. Hiding is intentional.
+    internal static new ManualLogSource Log;
 
     // --- Config -----------------------------------------------------------------------
     internal static ConfigEntry<KeyCode> ToggleUiKey;
+    internal static ConfigEntry<int> UiFontSize;
     internal static ConfigEntry<float> Volume;
     internal static ConfigEntry<float> AudioMaxDistance;
     internal static ConfigEntry<float> ScreenWidthMeters;
@@ -36,10 +39,22 @@ public class Plugin : BasePlugin
     internal static ConfigEntry<string> YtDlpPath;
     internal static ConfigEntry<bool> YtDlpAutoDownload;
     internal static ConfigEntry<string> FormatSelector;
+    internal static ConfigEntry<string> ExtractorArgs;
     internal static ConfigEntry<float> DriftTolerance;
     internal static ConfigEntry<bool> GuestsCanControl;
     internal static ConfigEntry<bool> AutoPlay;
     internal static ConfigEntry<bool> Diagnostics;
+
+    // Development helpers. Off by default; see BigScreen.Dev.AutoStart.
+    internal static ConfigEntry<bool> AutoHost;
+    internal static ConfigEntry<string> AutoHostSaveSlot;
+    internal static ConfigEntry<int> AutoHostPlayerCount;
+    internal static ConfigEntry<float> AutoHostDelay;
+    internal static ConfigEntry<string> AutoLoadUrl;
+    internal static ConfigEntry<float> AutoLoadDelay;
+    internal static ConfigEntry<string> DevDirectUrl;
+    internal static ConfigEntry<bool> AutoDismissMenus;
+    internal static ConfigEntry<string> SpawnPosition;
 
     private Harmony _harmony;
 
@@ -50,6 +65,11 @@ public class Plugin : BasePlugin
 
         ToggleUiKey = Config.Bind("Keys", "ToggleUI", KeyCode.F8,
             "Opens/closes the BigScreen control panel.");
+
+        UiFontSize = Config.Bind("UI", "FontSize", 16,
+            new ConfigDescription("Font size for the control panel. The panel picks up a change the " +
+                                  "next time it is drawn, so you can edit this while the game runs.",
+                new AcceptableValueRange<int>(8, 40)));
 
         Volume = Config.Bind("Audio", "Volume", 0.8f,
             new ConfigDescription("Local playback volume for the screen's audio (0-1). Only affects you.",
@@ -75,6 +95,12 @@ public class Plugin : BasePlugin
             "best[ext=mp4][vcodec^=avc1][acodec!=none][height<=720]/best[ext=mp4][acodec!=none]/18/best[acodec!=none][protocol^=http]",
             "yt-dlp -f expression. Unity's VideoPlayer needs a single progressive MP4 (H.264+AAC) " +
             "that already contains audio, so the default only picks muxed formats. Change with care.");
+        ExtractorArgs = Config.Bind("YtDlp", "ExtractorArgs", "youtube:player_client=android",
+            "Passed to yt-dlp as --extractor-args. YouTube's default player clients currently return no " +
+            "playable formats at all (only storyboard images), which surfaces as 'Requested format is not " +
+            "available'. The android client still serves format 18, the muxed H.264+AAC MP4 that Unity's " +
+            "VideoPlayer needs. If YouTube blocks this client too, try tv / ios / web_safari / mweb, or " +
+            "clear this to use yt-dlp's own defaults.");
 
         DriftTolerance = Config.Bind("Sync", "DriftToleranceSeconds", 1.0f,
             new ConfigDescription("How far your playback may drift from the host's timeline before we re-seek.",
@@ -86,6 +112,37 @@ public class Plugin : BasePlugin
 
         Diagnostics = Config.Bind("Debug", "Diagnostics", false,
             "Write a verbose status line to the BepInEx log every couple of seconds.");
+
+        AutoHost = Config.Bind("Dev", "AutoHost", false,
+            "Host a save slot straight from the main menu, skipping Host Game / slot / player count. " +
+            "Development convenience; it drives the game's own menu code and may break on a game update.");
+        AutoHostSaveSlot = Config.Bind("Dev", "AutoHostSaveSlot", "",
+            "Name of the save slot to host. Empty means the most recently played one. " +
+            "If the name does not match, the log lists the slots that were found.");
+        AutoHostPlayerCount = Config.Bind("Dev", "AutoHostPlayerCount", 3,
+            new ConfigDescription("Player count for the hosted session.", new AcceptableValueRange<int>(2, 4)));
+        AutoHostDelay = Config.Bind("Dev", "AutoHostDelaySeconds", 3f,
+            new ConfigDescription("How long to wait after the main menu appears before hosting.",
+                new AcceptableValueRange<float>(0f, 60f)));
+
+        AutoLoadUrl = Config.Bind("Dev", "AutoLoadUrl", "",
+            "Placed and loaded automatically once you are hosting. Empty disables it.");
+        AutoDismissMenus = Config.Bind("Dev", "AutoDismissMenus", false,
+            "Click through the splash and mic-check screens and open the host menu automatically. " +
+            "Needed for an unattended test run; nothing else can get past those screens.");
+
+        SpawnPosition = Config.Bind("Dev", "SpawnPosition", "",
+            "Teleport to these world coordinates once after entering a session, as \"x,y,z\". " +
+            "Empty disables it. Use the panel's 'Set spawn here' button to fill this in from " +
+            "where you are standing.");
+
+        DevDirectUrl = Config.Bind("Dev", "DirectUrl", "",
+            "Skip yt-dlp and hand this URL straight to the VideoPlayer. Must be a progressive MP4 " +
+            "(H.264 + AAC). Use it to test video playback on its own, without running yt-dlp.");
+
+        AutoLoadDelay = Config.Bind("Dev", "AutoLoadDelaySeconds", 6f,
+            new ConfigDescription("How long to wait after entering the world before placing the screen and loading.",
+                new AcceptableValueRange<float>(0f, 120f)));
 
         // MonoBehaviours written in managed code must be registered with the IL2CPP
         // domain before Unity will accept them via AddComponent.

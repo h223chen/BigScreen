@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 namespace BigScreen.UI;
@@ -7,39 +7,119 @@ namespace BigScreen.UI;
 /// Immediate-mode (IMGUI) control panel. IMGUI is the one UI toolkit that needs no
 /// assets shipped with the mod, which is why every Big Walk mod uses it for overlays.
 /// All state lives on the controller; this class only draws and forwards clicks.
+///
+/// The default IMGUI window background is partly transparent, which is unreadable over the
+/// red starting area. We draw our own opaque background instead, and keep error text amber
+/// rather than red so it stays legible against that same area.
 /// </summary>
 internal sealed class ControlPanel
 {
     private readonly BigScreenController _c;
-    private Rect _window = new Rect(40f, 40f, 560f, 420f);
+    private Rect _window = new Rect(40f, 40f, 720f, 560f);
     private string _urlInput = "";
-    private Vector2 _scroll;
-    private GUIStyle _wrap;
+
+    private GUIStyle _windowStyle;
+    private GUIStyle _label;
+    private GUIStyle _error;
+    private GUIStyle _button;
+    private GUIStyle _textField;
+    private GUIStyle _toggle;
+    private Texture2D _bgTexture;
+    private int _builtForFontSize = -1;
 
     private const int WindowId = 0x8153;
+
+    // A plain progressive H.264/AAC MP4. Loading this skips yt-dlp entirely (see
+    // YtDlp.LooksLikeDirectMedia), so it tests the screen and VideoPlayer on their own.
+    private const string TestMp4Url = "https://samplelib.com/mp4/sample-5s.mp4";
 
     public ControlPanel(BigScreenController controller)
     {
         _c = controller;
     }
 
+    /// <summary>A 1x1 texture used as a flat background fill.</summary>
+    private static Texture2D SolidTexture(Color color)
+    {
+        var t = new Texture2D(1, 1, TextureFormat.RGBA32, false);
+        t.SetPixel(0, 0, color);
+        t.Apply();
+        // Keep Unity from unloading it between scenes; we never destroy it.
+        t.hideFlags = HideFlags.HideAndDontSave;
+        return t;
+    }
+
+    /// <summary>
+    /// Builds the styles. Re-runs if the configured font size changed, so the size can be
+    /// tuned from the config file without restarting the game.
+    /// </summary>
+    private void EnsureStyles()
+    {
+        int size = Mathf.Clamp(Plugin.UiFontSize.Value, 8, 40);
+        if (_windowStyle != null && _builtForFontSize == size) return;
+        _builtForFontSize = size;
+
+        if (_bgTexture == null) _bgTexture = SolidTexture(new Color(0.05f, 0.05f, 0.07f, 0.97f));
+
+        _windowStyle = new GUIStyle(GUI.skin.window)
+        {
+            fontSize = size + 2,
+            padding = new RectOffset(12, 12, size + 14, 12),
+        };
+        _windowStyle.normal.background = _bgTexture;
+        _windowStyle.onNormal.background = _bgTexture;
+        _windowStyle.normal.textColor = Color.white;
+        _windowStyle.onNormal.textColor = Color.white;
+
+        _label = new GUIStyle(GUI.skin.label) { fontSize = size, wordWrap = true };
+        _label.normal.textColor = new Color(0.92f, 0.92f, 0.94f);
+
+        // Amber, not red: the starting area is mostly red and red-on-red disappears.
+        _error = new GUIStyle(_label) { fontSize = size, wordWrap = true };
+        _error.normal.textColor = new Color(1f, 0.78f, 0.25f);
+
+        _button = new GUIStyle(GUI.skin.button) { fontSize = size };
+        _textField = new GUIStyle(GUI.skin.textField) { fontSize = size };
+        _toggle = new GUIStyle(GUI.skin.toggle) { fontSize = size };
+    }
+
+    private float ButtonHeight => _builtForFontSize + 16f;
+
+    // Built once and kept alive for the life of the panel.
+    //
+    // Casting a managed method to GUI.WindowFunction creates an IL2CPP delegate wrapping a
+    // managed trampoline. Doing that inline in Draw() made a new one every frame while the
+    // panel was open, with no managed reference kept. Unity holds the native side across the
+    // call, so once the GC collected one the process died with an access violation on the
+    // main thread - intermittent, and only ever with the panel open.
+    //
+    // MirrorChannel keeps its converted handlers alive for the same reason.
+    private GUI.WindowFunction _drawWindow;
+
     public void Draw()
     {
-        _wrap ??= new GUIStyle(GUI.skin.label) { wordWrap = true };
-        _window = GUI.Window(WindowId, _window, (GUI.WindowFunction)DrawWindow, "BigScreen - watch together");
+        EnsureStyles();
+        _drawWindow ??= (GUI.WindowFunction)DrawWindow;
+        _window = GUI.Window(WindowId, _window, _drawWindow,
+                             "BigScreen - watch together", _windowStyle);
     }
 
     private void DrawWindow(int id)
     {
+        // Log the mouse events the window sees, so the log shows how far the click got.
+        var ev = Event.current;
+        if (ev != null && (ev.type == EventType.MouseDown || ev.type == EventType.MouseUp))
+            Plugin.Log.LogInfo($"GUI window: {ev.type} button={ev.button} at {ev.mousePosition}");
+
         try
         {
             DrawBody();
         }
         catch (Exception e)
         {
-            GUILayout.Label("UI error: " + e.Message, _wrap);
+            GUILayout.Label("UI error: " + e.Message, _error);
         }
-        GUI.DragWindow(new Rect(0f, 0f, 10000f, 20f));
+        GUI.DragWindow(new Rect(0f, 0f, 10000f, ButtonHeight));
     }
 
     private void DrawBody()
@@ -51,92 +131,134 @@ internal sealed class ControlPanel
         // --- Status ---------------------------------------------------------------
         if (!inLobby)
         {
-            GUILayout.Label("Not in a lobby. Host or join a walk first.", _wrap);
+            GUILayout.Label("Not in a lobby. Host or join a walk first.", _label);
         }
         else
         {
             string role = session.IsHost ? $"Host (modded guests: {session.ModdedPeerCount})"
                                          : (session.HelloSent ? "Guest (connected to host)" : "Guest (waiting for host...)");
-            GUILayout.Label($"Role: {role}");
+            GUILayout.Label($"Role: {role}", _label);
             if (!session.IsHost && !session.State.GuestsCanControl)
-                GUILayout.Label("The host has not enabled guest control; you can watch and adjust your own volume.", _wrap);
+                GUILayout.Label("The host has not enabled guest control; you can watch and adjust your own volume.", _label);
         }
-        GUILayout.Label(_c.StatusLine, _wrap);
+        GUILayout.Label(_c.StatusLine, _label);
         if (!string.IsNullOrEmpty(_c.LastError))
-        {
-            var prev = GUI.color;
-            GUI.color = new Color(1f, 0.6f, 0.6f);
-            GUILayout.Label(_c.LastError, _wrap);
-            GUI.color = prev;
-        }
-        GUILayout.Space(6f);
+            GUILayout.Label(_c.LastError, _error);
+        GUILayout.Space(8f);
 
         // --- Screen placement -------------------------------------------------------
         GUILayout.BeginHorizontal();
         GUI.enabled = inLobby && canControl;
-        if (GUILayout.Button(_c.Session.State.HasScreen ? "Move screen here" : "Place screen here", GUILayout.Height(28f)))
+        if (GUILayout.Button(_c.Session.State.HasScreen ? "Move screen here" : "Place screen here", _button, GUILayout.Height(ButtonHeight)))
             _c.UserPlaceScreen();
         GUI.enabled = inLobby && canControl && _c.Session.State.HasScreen;
-        if (GUILayout.Button("Remove screen", GUILayout.Height(28f)))
+        if (GUILayout.Button("Remove screen", _button, GUILayout.Height(ButtonHeight)))
+        {
+            Plugin.Log.LogInfo("Button: Remove screen.");
             _c.UserRemoveScreen();
+        }
+        GUI.enabled = inLobby;
+        if (GUILayout.Button("Set spawn here", _button, GUILayout.Height(ButtonHeight)))
+            _c.UserSetSpawnHere();
         GUI.enabled = true;
         GUILayout.EndHorizontal();
-        GUILayout.Space(6f);
+        GUILayout.Space(8f);
 
         // --- Video ---------------------------------------------------------------------
-        GUILayout.Label("YouTube URL (or anything yt-dlp supports):");
+        GUILayout.Label("YouTube URL (or anything yt-dlp supports):", _label);
         GUILayout.BeginHorizontal();
         GUI.enabled = inLobby && canControl;
-        _urlInput = GUILayout.TextField(_urlInput ?? "", GUILayout.ExpandWidth(true));
-        if (GUILayout.Button("Load", GUILayout.Width(70f)))
+        _urlInput = GUILayout.TextField(_urlInput ?? "", _textField, GUILayout.ExpandWidth(true), GUILayout.Height(ButtonHeight));
+        if (GUILayout.Button("Load", _button, GUILayout.Width(90f), GUILayout.Height(ButtonHeight)))
             _c.UserLoad(_urlInput);
         GUI.enabled = true;
         GUILayout.EndHorizontal();
 
+        // A duplicate of the Test MP4 button at the top of the panel. If clicking this one
+        // is fine and the bottom one still kills the game, the position matters rather than
+        // the button; if both crash, it is the button.
+        GUI.enabled = inLobby && canControl;
+        // Bisect step 2: this copy calls UserLoad, the bottom one does not. Clicking each in
+        // turn shows which half of the handler is fatal in a single run.
+        if (GUILayout.Button("Test MP4 (top copy - calls UserLoad)", _button, GUILayout.Height(ButtonHeight)))
+        {
+            Plugin.Log.LogInfo("Test MP4 (top copy) clicked, calling UserLoad.");
+            _c.UserLoad(TestMp4Url);
+        }
+        GUI.enabled = true;
+
         var st = session.State;
         if (!string.IsNullOrEmpty(st.VideoUrl))
         {
-            GUILayout.Label($"Now: {(string.IsNullOrEmpty(st.Title) ? st.VideoUrl : st.Title)}", _wrap);
+            GUILayout.Label($"Now: {(string.IsNullOrEmpty(st.Title) ? st.VideoUrl : st.Title)}", _label);
             double pos = _c.LocalVideoTime;
             double len = _c.LocalVideoDuration;
-            GUILayout.Label($"{Fmt(pos)} / {(len > 0 ? Fmt(len) : "?")}   {(st.Playing ? "playing" : "paused")}   drift {_c.LastDrift:+0.00;-0.00}s");
+            GUILayout.Label($"{Fmt(pos)} / {(len > 0 ? Fmt(len) : "?")}   {(st.Playing ? "playing" : "paused")}   drift {_c.LastDrift:+0.00;-0.00}s", _label);
         }
 
         GUILayout.BeginHorizontal();
         GUI.enabled = inLobby && canControl && !string.IsNullOrEmpty(st.VideoUrl);
-        if (GUILayout.Button(st.Playing ? "Pause" : "Play", GUILayout.Height(28f))) _c.UserTogglePlay();
-        if (GUILayout.Button("-30s", GUILayout.Height(28f))) _c.UserSeekRelative(-30);
-        if (GUILayout.Button("-5s", GUILayout.Height(28f))) _c.UserSeekRelative(-5);
-        if (GUILayout.Button("+5s", GUILayout.Height(28f))) _c.UserSeekRelative(5);
-        if (GUILayout.Button("+30s", GUILayout.Height(28f))) _c.UserSeekRelative(30);
-        if (GUILayout.Button("Restart", GUILayout.Height(28f))) _c.UserSeekTo(0);
-        if (GUILayout.Button("Stop", GUILayout.Height(28f))) _c.UserStop();
+        if (GUILayout.Button(st.Playing ? "Pause" : "Play", _button, GUILayout.Height(ButtonHeight))) _c.UserTogglePlay();
+        if (GUILayout.Button("-30s", _button, GUILayout.Height(ButtonHeight))) _c.UserSeekRelative(-30);
+        if (GUILayout.Button("-5s", _button, GUILayout.Height(ButtonHeight))) _c.UserSeekRelative(-5);
+        if (GUILayout.Button("+5s", _button, GUILayout.Height(ButtonHeight))) _c.UserSeekRelative(5);
+        if (GUILayout.Button("+30s", _button, GUILayout.Height(ButtonHeight))) _c.UserSeekRelative(30);
+        if (GUILayout.Button("Restart", _button, GUILayout.Height(ButtonHeight))) _c.UserSeekTo(0);
+        if (GUILayout.Button("Stop", _button, GUILayout.Height(ButtonHeight))) _c.UserStop();
         GUI.enabled = true;
         GUILayout.EndHorizontal();
-        GUILayout.Space(6f);
+        GUILayout.Space(8f);
 
         // --- Local settings ----------------------------------------------------------------
         GUILayout.BeginHorizontal();
-        GUILayout.Label("My volume", GUILayout.Width(80f));
-        float v = GUILayout.HorizontalSlider(Plugin.Volume.Value, 0f, 1f, GUILayout.Width(200f));
+        GUILayout.Label("My volume", _label, GUILayout.Width(_builtForFontSize * 7f));
+        float v = GUILayout.HorizontalSlider(Plugin.Volume.Value, 0f, 1f, GUILayout.Width(220f));
         if (Math.Abs(v - Plugin.Volume.Value) > 0.001f) { Plugin.Volume.Value = v; _c.ApplyLocalAudioConfig(); }
-        GUILayout.Label($"{(int)(v * 100)}%", GUILayout.Width(40f));
+        GUILayout.Label($"{(int)(v * 100)}%", _label, GUILayout.Width(_builtForFontSize * 4f));
         GUILayout.EndHorizontal();
 
         if (session.IsHost)
         {
-            bool g = GUILayout.Toggle(Plugin.GuestsCanControl.Value, " Let modded guests control playback");
+            bool g = GUILayout.Toggle(Plugin.GuestsCanControl.Value, " Let modded guests control playback", _toggle);
             if (g != Plugin.GuestsCanControl.Value) Plugin.GuestsCanControl.Value = g;
-            bool a = GUILayout.Toggle(Plugin.AutoPlay.Value, " Auto-play when a video is ready");
+            bool a = GUILayout.Toggle(Plugin.AutoPlay.Value, " Auto-play when a video is ready", _toggle);
             if (a != Plugin.AutoPlay.Value) Plugin.AutoPlay.Value = a;
         }
 
-        GUILayout.Space(6f);
+        GUILayout.Space(8f);
         GUILayout.BeginHorizontal();
-        if (GUILayout.Button("Update yt-dlp", GUILayout.Width(120f))) _c.UserUpdateYtDlp();
-        if (GUILayout.Button("Resync", GUILayout.Width(80f))) _c.ForceResync();
+        if (GUILayout.Button("Update yt-dlp", _button, GUILayout.Width(_builtForFontSize * 10f), GUILayout.Height(ButtonHeight))) _c.UserUpdateYtDlp();
+        if (GUILayout.Button("Resync", _button, GUILayout.Width(_builtForFontSize * 7f), GUILayout.Height(ButtonHeight)))
+        {
+            Plugin.Log.LogInfo("Button: Resync.");
+            _c.ForceResync();
+        }
+        GUI.enabled = inLobby && canControl;
+
+        // The click handler below never reaches its first log line, so the fault is at or
+        // inside this call, not in what it triggers. These two lines bracket it. Only mouse
+        // events are logged, so this stays quiet during normal drawing.
+        var ev = Event.current;
+        bool mouseEvent = ev != null && (ev.type == EventType.MouseDown || ev.type == EventType.MouseUp);
+        if (mouseEvent) Plugin.Log.LogInfo($"GUI {ev.type}: before Test MP4 button (enabled={GUI.enabled})");
+
+        bool testMp4Clicked = GUILayout.Button("Test MP4", _button,
+                                               GUILayout.Width(_builtForFontSize * 8f),
+                                               GUILayout.Height(ButtonHeight));
+
+        if (mouseEvent) Plugin.Log.LogInfo($"GUI: Test MP4 button returned {testMp4Clicked}");
+
+        // Bisect step 2: the cheap statements are back, UserLoad is still left out.
+        // Step 1 (empty body) did not crash, so the fault is somewhere in here.
+        if (testMp4Clicked)
+        {
+            Plugin.Log.LogInfo("Test MP4 clicked.");
+            GUIUtility.keyboardControl = 0;
+            Plugin.Log.LogInfo("Test MP4: focus cleared, UserLoad NOT called.");
+        }
+        GUI.enabled = true;
         GUILayout.FlexibleSpace();
-        if (GUILayout.Button($"Close [{Plugin.ToggleUiKey.Value}]", GUILayout.Width(110f))) _c.SetPanelVisible(false);
+        if (GUILayout.Button($"Close [{Plugin.ToggleUiKey.Value}]", _button, GUILayout.Width(_builtForFontSize * 10f), GUILayout.Height(ButtonHeight))) _c.SetPanelVisible(false);
         GUILayout.EndHorizontal();
     }
 

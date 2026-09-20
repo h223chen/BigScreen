@@ -17,6 +17,11 @@ place to change.
 > `TASK_LIST.md`); one unexplained game freeze occurred and has not recurred.
 > `.\scripts\game-state.ps1` reports live game/mod/plugin state and the last session's log.
 
+Launch the game with mods through Gale directly:
+```
+/c/Program\ Files/gale/gale.exe --game <slug> --profile Default --launch --no-gui
+```
+
 ## 0. Before building
 
 - [ ] BepInExPack IL2CPP installed (Gale/r2modman profile) and the game launched once with it.

@@ -1,8 +1,11 @@
-# Build output
+﻿# Build output
 bin/
 obj/
 dist/
 build/
+
+# Per-machine tool paths for the scripts (see .env.template)
+.env
 
 # Per-machine build overrides (game path, BepInEx profile path)
 Config.Build.user.props

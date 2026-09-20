@@ -19,8 +19,17 @@ Design and rationale: `docs/ARCHITECTURE.md`. Background for engineers new to Un
 ```powershell
 .\scripts\build.ps1            # dotnet build against the auto-detected BepInEx folder
 .\scripts\build.ps1 -Deploy    # + copy DLL into <BepInEx>\plugins\BigScreen (game must be closed)
+.\scripts\launch.ps1           # build, deploy, then start the game modded through Gale
+.\scripts\game-state.ps1       # is it running, is it modded, what did we log
 .\scripts\package.ps1          # Thunderstore zip in dist\
 ```
+`launch.ps1` runs Gale's CLI (`--game big-walk --profile Default --launch --no-gui`); launching
+from Steam does not attach the loader. Big Walk opens on a mic-check screen that needs one click
+before the main menu, which no script can do for you. Past that, `Dev.AutoHost` takes it into the
+session on its own.
+
+Per-machine tool paths come from `.env` (gitignored; copy `.env.template`). Real environment
+variables override it. Every key is optional - the scripts auto-detect first.
 BepInEx folder resolution: `/p:BepInExPath`, else `Config.Build.user.props`, else Gale profile,
 r2modman profile, game folder. See `Directory.Build.props`.
 
