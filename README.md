@@ -73,17 +73,30 @@ and it fades (configurable range).
 
 ## Building from source
 
-Prerequisites: .NET SDK 8 or newer, Big Walk launched at least once with BepInEx so that
-`BepInEx\interop` exists (in your mod-manager profile or the game folder).
+**Prerequisites:**
+1. [.NET SDK 10](https://dotnet.microsoft.com/download) or newer
+2. A mod manager: [Gale](https://github.com/minotaurmoon/Gale) or [r2modman](https://thunderstore.io/tools/r2modman/)
+3. [BepInExPack_IL2CPP](https://thunderstore.io/c/big-walk/p/BepInEx/BepInExPack_IL2CPP/) installed via your chosen mod manager
+4. Big Walk launched modded at least once so that `BepInEx\interop` exists
+
+**Setup:**
 
 ```powershell
-.\scripts\build.ps1            # build src\BigScreen -> src\BigScreen\bin\Release\BigScreen.dll
-.\scripts\build.ps1 -Deploy    # build and copy into <BepInEx>\plugins\BigScreen (game must be closed)
-.\scripts\package.ps1          # Thunderstore-ready zip in dist\
+# 1. Install and launch the game modded through Gale or r2modman
+#    (this generates the interop files you need to build)
+
+# 2. Verify .NET SDK is installed
+dotnet --version
+
+# 3. Build and deploy the mod
+.\scripts\build.ps1 -Deploy    # build and copy into <BepInEx>\plugins\BigScreen
+
+# Alternative: create a Thunderstore-ready package
+.\scripts\package.ps1          # creates dist\BigScreen-*.zip
 ```
 
 The build auto-detects the Gale profile, the r2modman profile, and the Steam game folder in
-that order. Anything else: copy `Config.Build.user.props.template` to
+that order. For a custom BepInEx path: copy `Config.Build.user.props.template` to
 `Config.Build.user.props` and set `BepInExPath`.
 
 New to Unity or game modding? Start with [docs/MODDING-PRIMER.md](docs/MODDING-PRIMER.md).
