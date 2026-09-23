@@ -63,6 +63,15 @@ internal sealed class SyncSession
                 State.GuestsCanControl = Plugin.GuestsCanControl.Value;
                 Commit();
             }
+            // The host's screen geometry is the screen everyone sees, so republish it when
+            // the host changes it - raising the screen moves it for the whole lobby.
+            if (!Mathf.Approximately(State.ScreenClearance, Plugin.ScreenGroundClearance.Value) ||
+                !Mathf.Approximately(State.ScreenWidth, Plugin.ScreenWidthMeters.Value))
+            {
+                State.ScreenClearance = Plugin.ScreenGroundClearance.Value;
+                State.ScreenWidth = Plugin.ScreenWidthMeters.Value;
+                Commit();
+            }
             if (Time.unscaledTime >= _nextHeartbeat)
             {
                 _nextHeartbeat = Time.unscaledTime + HeartbeatSeconds;

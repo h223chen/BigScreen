@@ -21,7 +21,7 @@ public class Plugin : BasePlugin
 {
     public const string Guid = "dev.h223chen.bigscreen";
     public const string Name = "BigScreen";
-    public const string Version = "1.0.2";
+    public const string Version = "1.0.3";
 
     internal static Plugin Instance { get; private set; }
     // `new` because BasePlugin exposes an instance Log; ours is the static shortcut the
@@ -142,7 +142,7 @@ public class Plugin : BasePlugin
         ScreenWidthMeters = Config.Bind("Screen", "WidthMeters", 4f,
             new ConfigDescription("Physical width of the screen in the world (16:9, so height follows).",
                 new AcceptableValueRange<float>(1f, 20f)));
-        ScreenGroundClearance = Config.Bind("Screen", "GroundClearance", 0.6f,
+        ScreenGroundClearance = Config.Bind("Screen", "GroundClearance", -0.3f,
             new ConfigDescription("How high the bottom edge of the picture sits above the spot the screen " +
                                   "was placed at, in meters. Lower this to bring the screen down; 0 puts it " +
                                   "on the ground and negative values sink it. The stand hides itself when " +

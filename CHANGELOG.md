@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.0.3
+
+Both players must be on this version: the sync message gained two fields, so the protocol
+version went to 2 and a 1.0.2 peer is rejected outright rather than misreading the message.
+
+### Changed
+- Screen geometry (`GroundClearance`, `WidthMeters`) is now part of the shared state and
+  owned by the host, the way position and yaw already were. A guest joining a lobby renders
+  the host's screen at the host's height and width instead of their own, so everyone is
+  looking at the same thing. Your own config still decides the screen for lobbies YOU host.
+- Raise/Lower is a host control now, and moves the screen for the whole lobby. A guest
+  pressing it is told the host sets the height; the panel shows the shared value.
+- `GroundClearance` now defaults to -0.3 rather than 0.6, which puts the screen near the
+  ground and hides the stand. A fresh install and a tuned one no longer disagree by almost a
+  metre. Existing configs keep whatever value they already hold - BepInEx does not rewrite a
+  setting that is already there, so a host on the old default still needs to lower theirs
+  once.
+
 ## 1.0.2
 
 ### Fixed

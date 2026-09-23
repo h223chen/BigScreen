@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -80,7 +80,8 @@ internal sealed class ScreenObject : IDisposable
         _screenMaterial = Primitives.MakeMaterial(Texture, Color.white);
         _picture.GetComponent<MeshRenderer>().material = _screenMaterial;
 
-        ApplyLayoutConfig();
+        // Layout is applied by the caller, which knows the host's clearance. Until then the
+        // parts sit at the origin of Root.
 
         // Parented to Root, so moving the screen carries the console with it. A failure here
         // must not cost you the screen: the video is the point, the console is a convenience.
@@ -133,11 +134,14 @@ internal sealed class ScreenObject : IDisposable
     /// the height can be dialled in from the config file while the game runs, without
     /// re-placing the screen or restarting.
     /// </summary>
-    public void ApplyLayoutConfig()
+    /// <param name="clearance">
+    /// Height of the bottom edge above the placement point. Comes from the shared state, so
+    /// a guest uses the host's value rather than their own config.
+    /// </param>
+    public void ApplyLayout(float clearance)
     {
         if (Root == null || _picture == null) return;
 
-        float clearance = Plugin.ScreenGroundClearance.Value;
         if (Mathf.Approximately(clearance, _appliedClearance)) return;
         _appliedClearance = clearance;
 

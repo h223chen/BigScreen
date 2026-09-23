@@ -1,4 +1,4 @@
-using Mirror;
+﻿using Mirror;
 using UnityEngine;
 
 namespace BigScreen.Net;
@@ -14,7 +14,9 @@ namespace BigScreen.Net;
 /// </summary>
 internal static class Protocol
 {
-    public const byte Version = 1;
+    // 2: added ScreenClearance / ScreenWidth. A v1 peer is rejected with a clear
+    // warning rather than misreading the trailing bytes.
+    public const byte Version = 2;
 
     public enum Kind : byte
     {
@@ -71,6 +73,8 @@ internal static class Protocol
         NetworkWriterExtensions.WriteDouble(w, s.AnchorNetTime);
         NetworkWriterExtensions.WriteDouble(w, s.AnchorVideoTime);
         NetworkWriterExtensions.WriteBool(w, s.GuestsCanControl);
+        NetworkWriterExtensions.WriteFloat(w, s.ScreenClearance);
+        NetworkWriterExtensions.WriteFloat(w, s.ScreenWidth);
     }
 
     public static SyncState ReadState(NetworkReader r)
@@ -86,6 +90,8 @@ internal static class Protocol
         s.AnchorNetTime = NetworkReaderExtensions.ReadDouble(r);
         s.AnchorVideoTime = NetworkReaderExtensions.ReadDouble(r);
         s.GuestsCanControl = NetworkReaderExtensions.ReadBool(r);
+        s.ScreenClearance = NetworkReaderExtensions.ReadFloat(r);
+        s.ScreenWidth = NetworkReaderExtensions.ReadFloat(r);
         return s;
     }
 
@@ -131,6 +137,15 @@ internal sealed class SyncState
     public double AnchorNetTime;
     public double AnchorVideoTime;
     public bool GuestsCanControl;
+
+    /// <summary>
+    /// Screen geometry, owned by the host. Each player keeps their own values in config for
+    /// when THEY host; in someone else's game the host's numbers win, so everyone is looking
+    /// at the same screen in the same place. Defaults match the config defaults, for the
+    /// window before the first state arrives.
+    /// </summary>
+    public float ScreenClearance = 0.6f;
+    public float ScreenWidth = 4f;
 
     public double ExpectedVideoTime(double netTimeNow)
     {

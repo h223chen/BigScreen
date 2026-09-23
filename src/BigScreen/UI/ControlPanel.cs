@@ -162,9 +162,10 @@ internal sealed class ControlPanel
         // the host has handed out control. Editing the config file mid-game does nothing;
         // BepInEx does not re-read it, so these buttons are the way to dial the height in.
         GUILayout.BeginHorizontal();
-        GUILayout.Label($"Screen height: {Plugin.ScreenGroundClearance.Value:F2} m", _label,
+        GUILayout.Label($"Screen height: {_c.Session.State.ScreenClearance:F2} m", _label,
                         GUILayout.Width(_builtForFontSize * 13f));
-        GUI.enabled = _c.Session.State.HasScreen;
+        // Height is the host's geometry, so the buttons are the host's to press.
+        GUI.enabled = _c.Session.State.HasScreen && _c.Session.IsHost;
         if (GUILayout.Button("Lower", _button, GUILayout.Width(_builtForFontSize * 6f), GUILayout.Height(ButtonHeight)))
             _c.UserNudgeScreenHeight(-0.1f);
         if (GUILayout.Button("Raise", _button, GUILayout.Width(_builtForFontSize * 6f), GUILayout.Height(ButtonHeight)))

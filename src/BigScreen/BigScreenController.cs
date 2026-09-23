@@ -231,12 +231,18 @@ public class BigScreenController : MonoBehaviour
     }
 
     /// <summary>
-    /// Raises or lowers the screen by a step. Local only - screen height is each player's
-    /// own geometry, not part of the shared state - and written straight back to the config
-    /// so the height survives a restart.
+    /// Raises or lowers the screen by a step, for everyone. Screen height is the host's, so
+    /// this is a host-only control; the value is written back to config so the height
+    /// survives a restart and applies to the next lobby this player hosts.
     /// </summary>
     internal void UserNudgeScreenHeight(float deltaMeters)
     {
+        if (!Session.IsHost)
+        {
+            StatusLine = "The host sets the screen height.";
+            return;
+        }
+
         float height = Mathf.Clamp(Plugin.ScreenGroundClearance.Value + deltaMeters, -2f, 5f);
         Plugin.ScreenGroundClearance.Value = height;
         _configDirty = true;
@@ -417,7 +423,7 @@ public class BigScreenController : MonoBehaviour
         {
             try
             {
-                _screen = ScreenObject.Create(s.ScreenPosition, s.ScreenYaw, Plugin.ScreenWidthMeters.Value,
+                _screen = ScreenObject.Create(s.ScreenPosition, s.ScreenYaw, s.ScreenWidth,
                     Plugin.RenderWidth.Value, Plugin.RenderHeight.Value);
                 _video = new UnityVideoBackend(_screen.Root, _screen.Audio, _screen.Texture);
                 _video.SetVolume(Plugin.Volume.Value);
@@ -448,7 +454,7 @@ public class BigScreenController : MonoBehaviour
 
         // Cheap no-op unless the configured height actually changed, so the screen can be
         // raised or lowered from the config file without re-placing it.
-        _screen?.ApplyLayoutConfig();
+        _screen?.ApplyLayout(s.ScreenClearance);
         TickConsole();
     }
 
