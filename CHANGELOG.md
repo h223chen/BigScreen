@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.5
 
 ### Changed
 - A fresh install now puts the host's screen in the starting area on entering a session.
