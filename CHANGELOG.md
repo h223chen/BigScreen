@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.5
+
+### Changed
+- A fresh install now puts the host's screen in the starting area on entering a session.
+  `Dev.ScreenPose` defaults to a spot there instead of empty, so no one has to press
+  **Place screen here** before there is something to paste a link at. Existing configs keep
+  whatever value they already hold.
+- The Thunderstore package ships `thunderstore/README.md`, a player-facing listing, instead of
+  the developer README.
+
 ## 1.0.4
 
 ### Fixed
