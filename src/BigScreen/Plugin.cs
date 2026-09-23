@@ -237,10 +237,12 @@ public class Plugin : BasePlugin
             "Show development-only controls in the F8 panel, such as 'Set spawn here'. These write " +
             "to the [Dev] settings above and are of no use in normal play, so they are hidden.");
 
-        ScreenPose = Config.Bind("Dev", "ScreenPose", "",
-            "Place the screen at this exact pose on an automated run, as \"x,y,z,yaw\". Empty means " +
-            "'4 m in front of wherever the player is looking', which lands somewhere different every " +
-            "run. Fill it in to pin the screen to a spot you chose.");
+        // The default is a spot in the starting area, so a fresh install gets a screen there
+        // without anyone having to place one. Placing or moving the screen overwrites it.
+        ScreenPose = Config.Bind("Dev", "ScreenPose", "-227.06,33.01,-505.14,313.0",
+            "Where the host's screen is put on entering a session, as \"x,y,z,yaw\". Placing or " +
+            "moving the screen updates this, so it comes back where you left it. The default is " +
+            "in the starting area. Empty means no screen until someone places one.");
 
         DevDirectUrl = Config.Bind("Dev", "DirectUrl", "",
             "Skip yt-dlp and hand this URL straight to the VideoPlayer. Must be a progressive MP4 " +
