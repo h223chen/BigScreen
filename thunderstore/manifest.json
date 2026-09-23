@@ -1,6 +1,6 @@
 {
   "name": "BigScreen",
-  "version_number": "1.0.0",
+  "version_number": "1.0.2",
   "website_url": "https://github.com/h223chen/BigScreen",
   "description": "A shared in-world screen for watching YouTube together in Big Walk.",
   "dependencies": [

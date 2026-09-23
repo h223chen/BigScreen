@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Il2CppInterop.Runtime;
 using Mirror;
@@ -109,7 +109,12 @@ internal static class MirrorChannel
         catch (Exception first)
         {
             Plugin.Log.LogDebug($"Modern delegate signature rejected ({first.Message}); trying legacy signature.");
-            Action<NetworkConnection, NetworkReader, int> legacy = (conn, reader, ch) => handler(conn as NetworkConnectionToClient, reader, ch);
+            // TryCast, not `as`. These are IL2CPP interop wrappers: `as` compares the managed
+            // wrapper type, and Mirror hands us one typed NetworkConnection, so `as` yields null
+            // even though the object behind it really is a NetworkConnectionToClient. That null
+            // reached the Hello handler, which dropped every guest without a word.
+            Action<NetworkConnection, NetworkReader, int> legacy =
+                (conn, reader, ch) => handler(conn?.TryCast<NetworkConnectionToClient>(), reader, ch);
             keepAlive = legacy;
             return DelegateSupport.ConvertDelegate<NetworkMessageDelegate>(legacy);
         }

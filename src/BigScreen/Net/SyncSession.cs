@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using Mirror;
 using UnityEngine;
@@ -160,7 +160,12 @@ internal sealed class SyncSession
             case Protocol.Kind.Hello:
             {
                 string ver = Protocol.ReadHello(reader);
-                if (conn == null) return;
+                if (conn == null)
+                {
+                    Plugin.Log.LogWarning($"Hello from a BigScreen v{ver} peer had no usable connection; " +
+                                          "cannot register them, so they will never receive state.");
+                    return;
+                }
                 _moddedPeers[conn.connectionId] = conn;
                 Plugin.Log.LogInfo($"Peer {conn.connectionId} has BigScreen v{ver}. Modded peers: {_moddedPeers.Count}.");
                 MirrorChannel.SendTo(conn, w => Protocol.WriteState(w, State));

@@ -21,7 +21,7 @@ public class Plugin : BasePlugin
 {
     public const string Guid = "dev.h223chen.bigscreen";
     public const string Name = "BigScreen";
-    public const string Version = "1.0.0";
+    public const string Version = "1.0.2";
 
     internal static Plugin Instance { get; private set; }
     // `new` because BasePlugin exposes an instance Log; ours is the static shortcut the

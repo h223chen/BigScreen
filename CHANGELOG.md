@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.0.2
+
+### Fixed
+- Guests never received anything from the host, so the screen only ever existed on the
+  hosting machine. Mirror's message delegate hands us the connection typed as
+  `NetworkConnection`, and the legacy-signature path cast it with `as`, which compares IL2CPP
+  interop wrapper types rather than the native type and so produced `null`. The host then
+  dropped every guest's Hello without logging anything, and with no peer registered it never
+  broadcast state. Uses `TryCast` now, and a Hello that still arrives without a connection
+  says so in the log instead of vanishing.
+
+  Only reachable with two machines: a solo host never sends itself a Hello, so no amount of
+  single-machine testing could have hit it.
+
+## 1.0.1
+
+Comfort tweaks for actually sitting and watching something, rather than standing in front of
+a screen fighting the game's idle handling.
+
+### Added
+- `Comfort.KeepAwake`, which holds off the game's idle sleep - the dimming that creeps in
+  when you stand still - while a video is playing and you are within
+  `Comfort.KeepAwakeRadius` (15 m) of the screen. Sleep still works normally away from the
+  screen. Set it to `Always` to hold it off for the whole lobby, or `Off` for stock
+  behaviour. Local only: it resets your own idle timer and changes nothing for other
+  players.
+- `Comfort.HideCrosshair`, which takes the crosshair off the picture once you have stood
+  still for `Comfort.HideCrosshairDelaySeconds` (5 s), and brings it back the instant you move
+  or look around. Same conditions as `KeepAwake`: only in front of a playing screen, and only
+  within `Comfort.KeepAwakeRadius`. Set the delay to 0 to follow the game's own sleep timer
+  instead.
+
 ## 1.0.0 - alpha
 
 First version verified end to end in game: a YouTube link plays on a shared screen with
@@ -15,17 +47,6 @@ positional audio, driven from an in-world control podium.
   the screen's own axes. Placement is remembered across restarts.
 - `YtDlp.CookiesFromBrowser`, for when YouTube blocks anonymous requests with
   "Sign in to confirm you're not a bot".
-- `Comfort.KeepAwake`, which holds off the game's idle sleep - the dimming that creeps in
-  when you stand still - while a video is playing and you are within
-  `Comfort.KeepAwakeRadius` (15 m) of the screen. Sleep still works normally away from the
-  screen. Set it to `Always` to hold it off for the whole lobby, or `Off` for stock
-  behaviour. Local only: it resets your own idle timer and changes nothing for other
-  players.
-- `Comfort.HideCrosshair`, which takes the crosshair off the picture once you have stood
-  still for `Comfort.HideCrosshairDelaySeconds` (5 s), and brings it back the instant you move
-  or look around. Same conditions as `KeepAwake`: only in front of a playing screen, and only
-  within `Comfort.KeepAwakeRadius`. Set the delay to 0 to follow the game's own sleep timer
-  instead.
 
 ### Changed
 - Audio falls off as 1/distance rescaled to reach silence at `MaxDistance`, instead of
