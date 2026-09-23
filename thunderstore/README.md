@@ -85,8 +85,8 @@ F8 panel, click **Update yt-dlp**, then load the video again. If that does not h
 report it.
 
 **Red lamp, "Sign in to confirm you're not a bot".** YouTube is blocking anonymous requests.
-Open `BepInEx\config\dev.h223chen.bigscreen.cfg` and set `CookiesFromBrowser` to the browser
-you use for YouTube, for example `CookiesFromBrowser = firefox`, then restart the game. yt-dlp
+In BigScreen's settings (see *Settings* below), set `CookiesFromBrowser` to the browser you use
+for YouTube, for example `firefox`, then restart the game. yt-dlp
 then requests the video using your YouTube login from that browser. This has not been tested
 yet, so please report whether it works for you.
 
@@ -98,12 +98,12 @@ put it in the same folder as `BigScreen.dll`.
 and that everyone is on the same BigScreen version. Leaving and rejoining the lobby resyncs.
 
 **It is too loud or too quiet across the camp.** Use your volume slider in the F8 panel. To
-change how far the sound carries, edit `MaxDistance` and `FullVolumeRadius` in the config file.
+change how far the sound carries, change `MaxDistance` and `FullVolumeRadius` in BigScreen's settings.
 
 ## Settings
 
-Settings live in `BepInEx\config\dev.h223chen.bigscreen.cfg`, created after the first launch.
-In Gale you can open it from the config editor. Useful ones:
+In Gale, open BigScreen in the config editor. For a manual install, the settings are in
+BigScreen's config file in `BepInEx\config`, created after the first launch. Useful ones:
 
 | Setting | Default | What it does |
 | --- | --- | --- |

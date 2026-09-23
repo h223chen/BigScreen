@@ -54,16 +54,16 @@ The first time you watch a video, BigScreen downloads [b]yt-dlp[/b] from its [ur
 
 [b]Red lamp, "Requested format is not available".[/b] YouTube may have changed something. Open the F8 panel, click [b]Update yt-dlp[/b], then load the video again. If that does not help, please report it.
 
-[b]Red lamp, "Sign in to confirm you're not a bot".[/b] YouTube is blocking anonymous requests. Open [b]BepInEx\config\dev.h223chen.bigscreen.cfg[/b] and set CookiesFromBrowser to the browser you use for YouTube, for example [code]CookiesFromBrowser = firefox[/code] then restart the game. yt-dlp then requests the video using your YouTube login from that browser. This has not been tested yet, so please report whether it works for you.
+[b]Red lamp, "Sign in to confirm you're not a bot".[/b] YouTube is blocking anonymous requests. In BigScreen's settings (see Settings below), set CookiesFromBrowser to the browser you use for YouTube, for example [b]firefox[/b], then restart the game. yt-dlp then requests the video using your YouTube login from that browser. This has not been tested yet, so please report whether it works for you.
 
 [b]yt-dlp fails to download.[/b] A firewall or antivirus may be blocking it. Download [b]yt-dlp.exe[/b] yourself from [url=https://github.com/yt-dlp/yt-dlp/releases/latest]yt-dlp's releases page[/url] and put it in the same folder as BigScreen.dll.
 
 [b]My friend's screen is out of sync or missing.[/b] Check that the host has BigScreen installed and that everyone is on the same BigScreen version. Leaving and rejoining the lobby resyncs.
 
-[b]It is too loud or too quiet across the camp.[/b] Use your volume slider in the F8 panel. To change how far the sound carries, edit MaxDistance and FullVolumeRadius in the config file.
+[b]It is too loud or too quiet across the camp.[/b] Use your volume slider in the F8 panel. To change how far the sound carries, change MaxDistance and FullVolumeRadius in BigScreen's settings.
 
 [size=4][b]Settings[/b][/size]
-Settings live in [b]BepInEx\config\dev.h223chen.bigscreen.cfg[/b], created after the first launch. Useful ones:
+In Gale, open BigScreen in the config editor. For a manual install, the settings are in BigScreen's config file in [b]BepInEx\config[/b], created after the first launch. Useful ones:
 [list]
 [*][b]ToggleUI[/b] (default F8): key that opens the panel
 [*][b]Volume[/b] (default 0.8): your own volume
@@ -87,4 +87,4 @@ Settings live in [b]BepInEx\config\dev.h223chen.bigscreen.cfg[/b], created after
 [size=4][b]Reporting problems[/b][/size]
 Use the Bugs tab here or open an issue on [url=https://github.com/h223chen/BigScreen/issues]GitHub[/url]. Please attach [b]BepInEx\LogOutput.log[/b] and say whether you were the host or a guest.
 
-Not affiliated with House House or Panic. Uses [url=https://github.com/yt-dlp/yt-dlp]yt-dlp[/url]. Source code on [url=https://github.com/h223chen/BigScreen]GitHub[/url], MIT licensed.
+Not affiliated with House House or Panic. Uses [url=https://github.com/yt-dlp/yt-dlp]yt-dlp[/url]. Source code is MIT licensed.
