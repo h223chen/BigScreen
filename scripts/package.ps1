@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Builds a shareable mod bundle under dist\.
 .DESCRIPTION
@@ -115,7 +115,14 @@ if ($IncludeYtDlp) {
 
 $manifest.version_number = $version
 if ($desc) { $manifest.description = $desc }
-$manifest | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $stage 'manifest.json') -Encoding UTF8
+# WriteAllText with an explicit no-BOM encoder, NOT Set-Content -Encoding UTF8: on Windows
+# PowerShell 5.1 that flag means UTF-8 WITH a BOM, and Thunderstore rejects a manifest.json
+# that starts with one. The rejection gives no reason, so this is expensive to rediscover.
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText(
+    (Join-Path $stage 'manifest.json'),
+    ($manifest | ConvertTo-Json -Depth 4),
+    $utf8NoBom)
 
 Copy-Item (Join-Path $repo 'README.md') (Join-Path $stage 'README.md') -Force
 if (Test-Path (Join-Path $repo 'CHANGELOG.md')) { Copy-Item (Join-Path $repo 'CHANGELOG.md') $stage -Force }

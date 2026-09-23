@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.4
+
+### Fixed
+- `package.ps1` wrote `manifest.json` with a UTF-8 BOM: `Set-Content -Encoding UTF8` means
+  "with BOM" on Windows PowerShell 5.1. Thunderstore accepted it anyway, so this was never
+  the upload failure it was first taken for - but a BOM has no business in a JSON file, and
+  every package built before this carried one. Written through `WriteAllText` with an
+  explicit no-BOM encoder now.
+
 ## 1.0.3
 
 Both players must be on this version: the sync message gained two fields, so the protocol
