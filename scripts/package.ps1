@@ -124,7 +124,8 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     ($manifest | ConvertTo-Json -Depth 4),
     $utf8NoBom)
 
-Copy-Item (Join-Path $repo 'README.md') (Join-Path $stage 'README.md') -Force
+# The listing README is player-facing; the repo README is for developers.
+Copy-Item (Join-Path $repo 'thunderstore\README.md') (Join-Path $stage 'README.md') -Force
 if (Test-Path (Join-Path $repo 'CHANGELOG.md')) { Copy-Item (Join-Path $repo 'CHANGELOG.md') $stage -Force }
 
 # Thunderstore requires the icon to be exactly 256x256; it rejects the upload otherwise.
