@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
@@ -52,6 +52,10 @@ public class Plugin : BasePlugin
     internal static ConfigEntry<float> DriftTolerance;
     internal static ConfigEntry<bool> GuestsCanControl;
     internal static ConfigEntry<bool> AutoPlay;
+    internal static ConfigEntry<World.ComfortMode> KeepAwake;
+    internal static ConfigEntry<float> KeepAwakeRadius;
+    internal static ConfigEntry<World.ComfortMode> HideCrosshair;
+    internal static ConfigEntry<float> HideCrosshairDelay;
     internal static ConfigEntry<bool> Diagnostics;
 
     // Development helpers. Off by default; see BigScreen.Dev.AutoStart.
@@ -105,6 +109,35 @@ public class Plugin : BasePlugin
                                   "hear at any given spot. At the default 1.5 m you hear about a third of " +
                                   "full volume standing 4 m back. Raise it to fill more of the area.",
                 new AcceptableValueRange<float>(0.5f, 20f)));
+
+        KeepAwake = Config.Bind("Comfort", "KeepAwake", World.ComfortMode.WhileWatching,
+            new ConfigDescription("Stop the game sending you to sleep - the slow dimming that happens when " +
+                                  "you stand still too long - while you are watching something. " +
+                                  "WhileWatching only holds it off when a video is playing and you are " +
+                                  "within KeepAwakeRadius of the screen, so sleep still works normally " +
+                                  "everywhere else. Always holds it off for the whole lobby. Off leaves " +
+                                  "the game alone. Only affects you; other players still see you sleep " +
+                                  "if they walk away from their own keyboards."));
+        KeepAwakeRadius = Config.Bind("Comfort", "KeepAwakeRadius", 15f,
+            new ConfigDescription("How close to the screen you have to be for KeepAwake=WhileWatching to " +
+                                  "hold sleep off, in meters. Measured to the middle of the screen, in " +
+                                  "every direction, so standing off to one side still counts.",
+                new AcceptableValueRange<float>(1f, 100f)));
+
+        HideCrosshair = Config.Bind("Comfort", "HideCrosshair", World.ComfortMode.WhileWatching,
+            new ConfigDescription("Hide the crosshair once you have stood still long enough, and bring it " +
+                                  "back the moment you move or look around. A dot in the middle of the " +
+                                  "picture is most annoying exactly when you are standing still watching " +
+                                  "something. WhileWatching only does it near a playing screen; Always does " +
+                                  "it anywhere in a lobby; Off leaves the crosshair alone."));
+        HideCrosshairDelay = Config.Bind("Comfort", "HideCrosshairDelaySeconds", 5f,
+            new ConfigDescription("How long you have to stand still before the crosshair goes, in seconds. " +
+                                  "Short is fine here because it only applies right in front of a playing " +
+                                  "screen, and the crosshair comes back the moment you move - so losing it " +
+                                  "early costs nothing. 0 follows the game's own sleep delay instead, which " +
+                                  "is around half a minute and long enough that a twitch of the mouse keeps " +
+                                  "resetting it.",
+                new AcceptableValueRange<float>(0f, 600f)));
 
         ScreenWidthMeters = Config.Bind("Screen", "WidthMeters", 4f,
             new ConfigDescription("Physical width of the screen in the world (16:9, so height follows).",

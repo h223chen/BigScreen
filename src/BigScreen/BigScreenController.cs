@@ -104,6 +104,9 @@ public class BigScreenController : MonoBehaviour
                 ReconcileScreen();
                 ReconcileVideo();
                 FollowTimeline();
+                Vector3 screenPosition = _screen != null ? _screen.Root.transform.position : Vector3.zero;
+                SleepGuard.Tick(screenPosition, _screen != null, Session.State.Playing);
+                CrosshairGuard.Tick(screenPosition, _screen != null, Session.State.Playing);
             }
 
             FlushConfigIfDue();
@@ -115,7 +118,9 @@ public class BigScreenController : MonoBehaviour
                                    $"rev={Session.State.Revision} screen={(_screen != null)} url={Session.State.VideoUrl} " +
                                    $"playing={Session.State.Playing} ready={_video?.IsReady} t={LocalVideoTime:F1} drift={LastDrift:F2} " +
                                    $"nettime={SafeNetTime():F1} conv_failed={MirrorChannel.ConversionFailed} " +
-                                   $"console={_screen?.Console?.DescribeAim(_lastAimOrigin) ?? "none"}");
+                                   $"console={_screen?.Console?.DescribeAim(_lastAimOrigin) ?? "none"} " +
+                                   $"awake={SleepGuard.Suppressing} xhair={(CrosshairGuard.Hidden ? "hidden" : "shown")} " +
+                                   $"idle={CrosshairGuard.SecondsIdle:F0}/{CrosshairGuard.DelaySeconds:F0}s({CrosshairGuard.DelaySource})");
             }
         }
         catch (Exception e)
@@ -741,10 +746,14 @@ public class BigScreenController : MonoBehaviour
         catch { return Time.unscaledTimeAsDouble; }
     }
 
-    private static bool TryGetLocalPlayerPose(out Vector3 position, out Vector3 forward)
+    /// <summary>
+    /// The local player's character, or false if the lobby has not produced one yet.
+    /// WorldManager usually has it; the scan is the fallback for the window right after a
+    /// join when it is still null.
+    /// </summary>
+    internal static bool TryGetLocalPlayer(out PlayerCharacter player)
     {
-        position = Vector3.zero;
-        forward = Vector3.forward;
+        player = null;
         try
         {
             PlayerCharacter pc = WorldManager.localPlayerCharacter;
@@ -759,6 +768,23 @@ public class BigScreenController : MonoBehaviour
                     }
             }
             if (pc == null) return false;
+            player = pc;
+            return true;
+        }
+        catch (Exception e)
+        {
+            Plugin.Log.LogWarning($"Local player lookup failed: {e.Message}");
+            return false;
+        }
+    }
+
+    private static bool TryGetLocalPlayerPose(out Vector3 position, out Vector3 forward)
+    {
+        position = Vector3.zero;
+        forward = Vector3.forward;
+        try
+        {
+            if (!TryGetLocalPlayer(out var pc)) return false;
 
             position = pc.transform.position;
             // Prefer the camera's facing so "in front of me" matches what the player is looking at.
@@ -796,6 +822,8 @@ public class BigScreenController : MonoBehaviour
         FlushConfigIfDue();
         TearDownScreen();
         Session.Reset();
+        SleepGuard.Reset();
+        CrosshairGuard.Reset();
         StatusLine = "Idle.";
         LastError = null;
         LastDrift = 0;
