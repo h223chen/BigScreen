@@ -2,19 +2,19 @@
 
 Watch YouTube together in Big Walk. The host gets a big screen in the starting area, anyone can paste a link, and everyone in your lobby who has the mod sees and hears the same video at the same moment. The sound comes from the screen, so it gets quieter as you walk away.
 
-[quote][b]Alpha.[/b] Video plays at up to 360p for now. Syncing has been tested with two players, so please report anything odd in the Bugs tab.[/quote]
+[quote][b]Alpha.[/b] Video plays at up to 360p for now. Please report anything odd in the Bugs tab.[/quote]
 
 [size=4][b]Who needs to install it[/b][/size]
 [list]
-[*][b]The host must have it.[/b] The host keeps everyone's screen in sync.
-[*][b]Every guest who wants to watch must have it.[/b]
-[*]Players without the mod can still join. They see and hear nothing, and nothing breaks for them.
+[*][b]The host must have it.[/b] The host keeps everyone's screen in sync.[/*]
+[*][b]Every guest who wants to watch must have it.[/b][/*]
+[*]Players without the mod can still join. They see and hear nothing, and nothing breaks for them.[/*]
 [/list]
 Tested only on the Steam version of Big Walk, on Windows.
 
 [size=4][b]Requirements[/b][/size]
 [list]
-[*][url=https://thunderstore.io/c/big-walk/p/BepInEx/BepInExPack_IL2CPP/]BepInExPack IL2CPP[/url] (version 6.0.755 or newer)
+[*][url=https://thunderstore.io/c/big-walk/p/BepInEx/BepInExPack_IL2CPP/]BepInExPack IL2CPP[/url] (version 6.0.755 or newer)[/*]
 [/list]
 
 [size=4][b]Installation[/b][/size]
@@ -22,28 +22,28 @@ Tested only on the Steam version of Big Walk, on Windows.
 
 [b]Manual install:[/b] these are the standard BepInEx steps. They have not been tested with BigScreen; installing through Gale is the tested route.
 [list=1]
-[*]Download [b]BepInExPack IL2CPP[/b] from its [url=https://thunderstore.io/c/big-walk/p/BepInEx/BepInExPack_IL2CPP/]Thunderstore page[/url] with the [b]Manual Download[/b] button.
-[*]Open the zip and copy everything inside its [b]BepInExPack[/b] folder into your Big Walk folder, next to [b]Big Walk.exe[/b]. To find that folder, right-click Big Walk in Steam, then [b]Manage > Browse local files[/b].
-[*]Start the game once and wait for it to reach the main menu. This first launch takes a few minutes and the game looks frozen. Let it finish, then quit.
-[*]Download BigScreen from the Files tab and copy the [b]BepInEx[/b] folder from the zip into your Big Walk folder. You should end up with [b]Big Walk\BepInEx\plugins\BigScreen\BigScreen.dll[/b].
-[*]Start the game normally from Steam.
+[*]Download [b]BepInExPack IL2CPP[/b] from its [url=https://thunderstore.io/c/big-walk/p/BepInEx/BepInExPack_IL2CPP/]Thunderstore page[/url] with the [b]Manual Download[/b] button.[/*]
+[*]Open the zip and copy everything inside its [b]BepInExPack[/b] folder into your Big Walk folder, next to [b]Big Walk.exe[/b]. To find that folder, right-click Big Walk in Steam, then [b]Manage > Browse local files[/b].[/*]
+[*]Start the game once and wait for it to reach the main menu. This first launch takes a few minutes and the game looks frozen. Let it finish, then quit.[/*]
+[*]Download BigScreen from the Files tab and copy the [b]BepInEx[/b] folder from the zip into your Big Walk folder. You should end up with [b]Big Walk\BepInEx\plugins\BigScreen\BigScreen.dll[/b].[/*]
+[*]Start the game normally from Steam.[/*]
 [/list]
 
 [b]Uninstall:[/b] delete the [b]BigScreen[/b] folder inside [b]BepInEx\plugins[/b].
 
 [size=4][b]How to use[/b][/size]
 [list=1]
-[*]Host or join a walk. A few seconds after the host arrives, a screen appears in the starting area with a small control podium beside it.
-[*]Copy a YouTube link in your browser. Walk up to the podium, look at the long [b]paste bar[/b] and left-click it. The video loads for everyone a few seconds later.
+[*]Host or join a walk. A few seconds after the host arrives, a screen appears in the starting area with a small control podium beside it.[/*]
+[*]Copy a YouTube link in your browser. Walk up to the podium, look at the long [b]paste bar[/b] and left-click it. The video loads for everyone a few seconds later.[/*]
 [/list]
 The podium has [b]skip back 10 s[/b], [b]play/pause[/b] and [b]skip forward 10 s[/b] buttons. Look at a button and left-click it, or press your controller's interact button.
 
-The lamp on the podium shows what is happening:
+The status bar on the podium shows what is happening:
 [list]
-[*][b]Grey:[/b] nothing loaded
-[*][b]Amber:[/b] loading the video
-[*][b]Green:[/b] ready or playing
-[*][b]Red:[/b] something went wrong. Press [b]F8[/b] to open the panel and read the error.
+[*][b]Grey:[/b] nothing loaded[/*]
+[*][b]Amber:[/b] loading the video[/*]
+[*][b]Green:[/b] ready or playing[/*]
+[*][b]Red:[/b] something went wrong. Press [b]F8[/b] to open the panel and read the error.[/*]
 [/list]
 Press [b]F8[/b] to open the BigScreen panel. It does everything the podium does, and more. You can type a link and press [b]Load[/b], seek in bigger steps, move the screen to where you are standing with [b]Move screen here[/b], and set your own volume. Your volume only affects you. The host can also raise or lower the screen, and can turn off guest control. The host's screen comes back at the same spot the next time they host.
 
@@ -54,7 +54,7 @@ The first time you watch a video, BigScreen downloads [b]yt-dlp[/b] from its [ur
 
 [b]Red lamp, "Requested format is not available".[/b] YouTube may have changed something. Open the F8 panel, click [b]Update yt-dlp[/b], then load the video again. If that does not help, please report it.
 
-[b]Red lamp, "Sign in to confirm you're not a bot".[/b] YouTube is blocking anonymous requests. In BigScreen's settings (see Settings below), set CookiesFromBrowser to the browser you use for YouTube, for example [b]firefox[/b], then restart the game. yt-dlp then requests the video using your YouTube login from that browser. This has not been tested yet, so please report whether it works for you.
+[b]Red lamp, "Sign in to confirm you're not a bot".[/b] YouTube is blocking anonymous requests. In BigScreen's settings (see Settings below), set CookiesFromBrowser to the browser you use for YouTube, for example [b]firefox[/b], then restart the game. yt-dlp then requests the video using your YouTube login from that browser. 
 
 [b]yt-dlp fails to download.[/b] A firewall or antivirus may be blocking it. Download [b]yt-dlp.exe[/b] yourself from [url=https://github.com/yt-dlp/yt-dlp/releases/latest]yt-dlp's releases page[/url] and put it in the same folder as BigScreen.dll.
 
@@ -65,23 +65,23 @@ The first time you watch a video, BigScreen downloads [b]yt-dlp[/b] from its [ur
 [size=4][b]Settings[/b][/size]
 In Gale, open BigScreen in the config editor. For a manual install, the settings are in BigScreen's config file in [b]BepInEx\config[/b], created after the first launch. Useful ones:
 [list]
-[*][b]ToggleUI[/b] (default F8): key that opens the panel
-[*][b]Volume[/b] (default 0.8): your own volume
-[*][b]MaxDistance[/b] (default 25): meters at which the screen goes silent
-[*][b]FullVolumeRadius[/b] (default 1.5): meters within which the screen plays at full volume
-[*][b]WidthMeters[/b] (default 4): screen width in meters. Everyone sees the host's value.
-[*][b]ShowConsole[/b] (default true): show the control podium next to the screen
-[*][b]GuestsCanControl[/b] (default true): host only, lets guests with the mod control playback
-[*][b]KeepAwake[/b] (default WhileWatching): stop the game putting you to sleep while you watch
-[*][b]HideCrosshair[/b] (default WhileWatching): hide the crosshair while you stand still watching
-[*][b]CookiesFromBrowser[/b] (default empty): browser to borrow your YouTube login from, if YouTube blocks you
+[*][b]ToggleUI[/b] (default F8): key that opens the panel[/*]
+[*][b]Volume[/b] (default 0.8): your own volume[/*]
+[*][b]MaxDistance[/b] (default 25): meters at which the screen goes silent[/*]
+[*][b]FullVolumeRadius[/b] (default 1.5): meters within which the screen plays at full volume[/*]
+[*][b]WidthMeters[/b] (default 4): screen width in meters. Everyone sees the host's value.[/*]
+[*][b]ShowConsole[/b] (default true): show the control podium next to the screen[/*]
+[*][b]GuestsCanControl[/b] (default true): host only, lets guests with the mod control playback[/*]
+[*][b]KeepAwake[/b] (default WhileWatching): stop the game putting you to sleep while you watch[/*]
+[*][b]HideCrosshair[/b] (default WhileWatching): hide the crosshair while you stand still watching[/*]
+[*][b]CookiesFromBrowser[/b] (default empty): browser to borrow your YouTube login from, if YouTube blocks you[/*]
 [/list]
 
 [size=4][b]Known limitations[/b][/size]
 [list]
-[*]Videos play at up to 360p. Higher quality needs a new video decoder and is planned.
-[*]Live streams are untested.
-[*]The screen and podium are only visible to players with the mod.
+[*]Videos play at up to 360p. Higher quality needs a new video decoder and is planned.[/*]
+[*]Live streams are untested.[/*]
+[*]The screen and podium are only visible to players with the mod.[/*]
 [/list]
 
 [size=4][b]Reporting problems[/b][/size]
