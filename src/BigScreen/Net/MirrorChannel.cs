@@ -16,8 +16,9 @@ namespace BigScreen.Net;
 /// payload that starts with that id. The interop assemblies expose the internal
 /// dictionary and the internal Send(ArraySegment) for us.
 ///
-/// Vanilla players that receive our message log "Unknown message id" and carry on, but
-/// we avoid even that by only sending to peers that said Hello.
+/// A peer without the mod must never receive our message: Mirror disconnects anyone who sends
+/// it an unknown message id. The host only sends to peers that said Hello, and a guest only says
+/// Hello after <see cref="HostDiscovery"/> has heard the host announce itself.
 /// </summary>
 internal static class MirrorChannel
 {

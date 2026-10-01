@@ -12,6 +12,7 @@ the same moment. The sound comes from the screen, so it gets quieter as you walk
 - **The host must have it.** The host keeps everyone's screen in sync.
 - **Every guest who wants to watch must have it.**
 - Players without the mod can still join. They see and hear nothing, and nothing breaks for them.
+- You can join a host who does not have the mod. You just won't see a screen in that lobby.
 
 Tested only on the Steam version of Big Walk, on Windows.
 

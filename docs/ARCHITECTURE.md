@@ -59,14 +59,28 @@ serialised with Mirror's own `NetworkWriterExtensions` primitives.
 Sequence:
 
 ```text
-guest connects, Mirror marks it ready
+host   ~~announce~~> Dissonance room "BigScreen.Discovery", every 2 s (only modded guests listen)
+guest connects, Mirror marks it ready, and the guest has heard the announcement
 guest  --Hello-->  host          host records the connection as "modded", replies with State
 host   --State-->  modded guests on every change (revision++), and every 5 s as heartbeat
 guest  --Request-> host          only honoured if GuestsCanControl; host mutates, broadcasts State
 ```
 
-The host never sends to vanilla clients (they never said Hello). If a vanilla client somehow got
-one, Mirror logs "Unknown message id" and continues; it does not disconnect.
+**Neither side may send our message to a peer without the mod.** Mirror disconnects any peer
+that sends it a message id it has no handler for (`NetworkServer/NetworkClient.OnTransportData`:
+"failed to unpack and invoke message. Disconnecting"). An earlier version of this document said
+the opposite, and that mistake shipped: a modded guest joining a vanilla host said Hello, was
+kicked mid-join, and sat on a black screen.
+
+So the rules are:
+
+- The host only sends to connections that said Hello. A vanilla client never says Hello.
+- A guest only says Hello (or sends anything else) after hearing the host announce itself over
+  Dissonance text chat (`Net/HostDiscovery.cs`). Dissonance delivers room text only to players
+  who joined that room, so vanilla players never receive the announcement, and a vanilla host
+  never sends one. If the announcement never arrives the guest stays silent: no sync, no kick.
+- `Sync.AssumeHostHasMod` skips the wait, for setups where discovery fails. It brings the kick
+  back if the host turns out to be vanilla.
 
 ## Local reconciliation (same code on host and guests)
 

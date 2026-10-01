@@ -32,6 +32,7 @@
   <ItemGroup Label="Game">
     <Reference Include="Assembly-CSharp"><HintPath>$(Interop)\Assembly-CSharp.dll</HintPath></Reference>
     <Reference Include="Mirror"><HintPath>$(Interop)\Mirror.dll</HintPath></Reference>
+    <Reference Include="DissonanceVoip"><HintPath>$(Interop)\DissonanceVoip.dll</HintPath></Reference>
     <!-- The game's input system. Legacy UnityEngine.Input does not see gamepad bindings. -->
     <Reference Include="Rewired_Core"><HintPath>$(Interop)\Rewired_Core.dll</HintPath></Reference>
   </ItemGroup>

@@ -115,6 +115,7 @@ public class BigScreenController : MonoBehaviour
             {
                 _nextDiag = Time.unscaledTime + 2f;
                 Plugin.Log.LogInfo($"[diag] host={Session.IsHost} client={NetworkClient.isConnected} peers={Session.ModdedPeerCount} " +
+                                   $"host_mod={Session.Discovery.HostHasMod} hello={Session.HelloSent} " +
                                    $"rev={Session.State.Revision} screen={(_screen != null)} url={Session.State.VideoUrl} " +
                                    $"playing={Session.State.Playing} ready={_video?.IsReady} t={LocalVideoTime:F1} drift={LastDrift:F2} " +
                                    $"nettime={SafeNetTime():F1} conv_failed={MirrorChannel.ConversionFailed} " +
@@ -318,6 +319,13 @@ public class BigScreenController : MonoBehaviour
         }
         else if (Session.IsConnectedClient)
         {
+            if (!Session.HelloSent)
+            {
+                LastError = Session.Discovery.GaveUp || Session.Discovery.ListenFailed
+                    ? "The host does not seem to have BigScreen, so there is no shared screen in this lobby."
+                    : "Still checking whether the host has BigScreen. Try again in a moment.";
+                return;
+            }
             if (!Session.State.GuestsCanControl) { LastError = "The host has not enabled guest control."; return; }
             if (!Session.SendRequest(req)) LastError = "Could not send the request to the host.";
         }

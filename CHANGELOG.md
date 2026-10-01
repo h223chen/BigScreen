@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- A guest with BigScreen joining a host without it was disconnected mid-join and stuck on a
+  black screen. The guest greeted the host over Mirror, and Mirror disconnects anyone who sends
+  a message it does not recognise. The host now announces itself over Dissonance text chat,
+  which only modded players listen to, and a guest sends nothing until it hears that. Against a
+  host without the mod, the guest now joins normally and simply sees no screen.
+
+### Added
+- `Sync.AssumeHostHasMod` (off by default): skip the check above if it fails on your setup and
+  you know the host has BigScreen.
+
+### Upgrade note
+- Hosts and guests must both update. A guest on this version waits for an announcement that
+  older hosts never send, so it will not sync with a host on 1.0.5 or earlier.
+
 ## 1.0.5
 
 ### Changed
