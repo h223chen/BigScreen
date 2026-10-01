@@ -144,9 +144,25 @@ This is worth keeping in mind: without that fallback path, sync would not work a
 future Big Walk patch updates Mirror, the modern path may start succeeding instead — both are
 still tried, in order, so no change should be needed.
 
-**The Dissonance fallback was not needed.** `ARCHITECTURE.md` "Risk 2" proposed exchanging
-payloads as text-chat strings if the handler table proved unreachable. It is reachable, so that
-plan stays on the shelf.
+**The Dissonance fallback was not needed for data,** but Dissonance turned out to be needed for
+something else; see the next section.
+
+## Unknown messages get you kicked
+
+Mirror is strict about message ids it does not recognise. When `UnpackAndInvoke` finds no
+handler it logs `Unknown message id`, and its caller, `OnTransportData`, then **disconnects the
+sender**. This is true on both the server and the client.
+
+Earlier versions of these docs said Mirror only logs a warning. That was wrong, and it caused a
+real bug: a guest with BigScreen joining a host without it said Hello as soon as it was ready,
+the vanilla host disconnected it, and the guest was left on a black screen.
+
+The fix is that the host speaks first, and not over Mirror. `Net/HostDiscovery.cs` has the host
+post `BIGSCREEN|<protocol>|host|<version>` to the Dissonance text room `BigScreen.Discovery`
+every 2 seconds. Dissonance is the game's voice library; its text chat only reaches players who
+joined the room, so only modded guests hear it. A guest sends nothing over Mirror (no Hello, no
+requests) until it has heard that line. If it never does, it gives up quietly after 15 seconds
+and the panel says the host does not seem to have BigScreen.
 
 ## Where the code lives
 
@@ -155,4 +171,5 @@ plan stays on the shelf.
 | `Net/MirrorChannel.cs` | the raw channel: register handlers, send bytes, convert delegates |
 | `Net/Protocol.cs` | the wire format, and the `SyncState` type itself |
 | `Net/SyncSession.cs` | session logic: who is modded, heartbeats, host vs guest |
+| `Net/HostDiscovery.cs` | host announces itself over Dissonance text; guests wait for it before sending |
 | `BigScreenController.cs` | making the local world match whatever the state says |

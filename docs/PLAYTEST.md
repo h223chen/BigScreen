@@ -90,6 +90,21 @@ Launch the game with mods through Gale directly:
       they have BepInEx at all) shows at most nothing. Confirm the host never sends to them:
       `Modded peers` count excludes them.
 - [ ] Guest leaves: host's `Modded peers` drops on the next heartbeat (`Modded peer N left.`).
+- [ ] Guest log shows `Listening for the host's BigScreen announcement.` then
+      `Host has BigScreen vX (protocol N)` within a few seconds, and only then `Sent Hello to host.`
+
+## 3b. Mixed lobbies (host and guest on different sides)
+
+- [ ] **Modded guest, vanilla host.** The guest loads into the world normally (this was the
+      black-screen bug). After 15 s the guest log shows `No BigScreen announcement from the host`,
+      and the F8 panel role reads `Guest (the host does not seem to have BigScreen)`. Nothing
+      appears in the world. The guest never logs `Sent Hello to host.`
+- [ ] Same setup: pressing **Load** or a podium button shows "The host does not seem to have
+      BigScreen" instead of sending anything.
+- [ ] **Vanilla guest, modded host.** Unchanged from before: the vanilla guest plays normally.
+- [ ] If the guest logs `Cannot listen to Dissonance text chat`, discovery is broken on this
+      build. The guest is still safe (it stays silent). Copy the error into an issue; as a
+      workaround with a modded host only, set `Sync.AssumeHostHasMod = true` on the guest.
 
 ## 4. Rough edges to note for the next iteration
 

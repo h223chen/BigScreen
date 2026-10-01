@@ -52,6 +52,7 @@ public class Plugin : BasePlugin
     internal static ConfigEntry<float> DriftTolerance;
     internal static ConfigEntry<bool> GuestsCanControl;
     internal static ConfigEntry<bool> AutoPlay;
+    internal static ConfigEntry<bool> AssumeHostHasMod;
     internal static ConfigEntry<World.ComfortMode> KeepAwake;
     internal static ConfigEntry<float> KeepAwakeRadius;
     internal static ConfigEntry<World.ComfortMode> HideCrosshair;
@@ -204,6 +205,12 @@ public class Plugin : BasePlugin
             "can send anything at all.");
         AutoPlay = Config.Bind("Sync", "AutoPlay", true,
             "Host only: start playing as soon as a loaded video is ready.");
+
+        AssumeHostHasMod = Config.Bind("Sync", "AssumeHostHasMod", false,
+            "Guests only. Before talking to the host, BigScreen waits to hear the host announce that it " +
+            "has the mod, because a host without it disconnects any guest that sends it BigScreen data. " +
+            "Turn this on ONLY if that check fails on your setup and you are sure the host has BigScreen. " +
+            "Joining a host without the mod while this is on gets you kicked to a black screen.");
 
         Diagnostics = Config.Bind("Debug", "Diagnostics", false,
             "Write a verbose status line to the BepInEx log every couple of seconds.");

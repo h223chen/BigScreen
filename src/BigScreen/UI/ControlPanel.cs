@@ -131,7 +131,10 @@ internal sealed class ControlPanel
         else
         {
             string role = session.IsHost ? $"Host (modded guests: {session.ModdedPeerCount})"
-                                         : (session.HelloSent ? "Guest (connected to host)" : "Guest (waiting for host...)");
+                        : session.HelloSent ? "Guest (connected to host)"
+                        : session.Discovery.ListenFailed ? "Guest (cannot check whether the host has BigScreen; see log)"
+                        : session.Discovery.GaveUp ? "Guest (the host does not seem to have BigScreen)"
+                        : "Guest (waiting for host...)";
             GUILayout.Label($"Role: {role}", _label);
             if (!session.IsHost && !session.State.GuestsCanControl)
                 GUILayout.Label("The host has not enabled guest control; you can watch and adjust your own volume.", _label);

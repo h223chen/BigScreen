@@ -8,9 +8,12 @@ namespace BigScreen.Net;
 /// <summary>
 /// Session logic on top of <see cref="MirrorChannel"/>.
 ///
-/// Host: owns the authoritative <see cref="State"/>, tracks which connections have the mod
-/// (they said Hello), pushes state on every change and as a slow heartbeat.
-/// Client: says Hello once ready, then mirrors whatever state arrives.
+/// Host: owns the authoritative <see cref="State"/>, announces itself through
+/// <see cref="HostDiscovery"/>, tracks which connections have the mod (they said Hello), and
+/// pushes state on every change and as a slow heartbeat.
+/// Client: waits until <see cref="HostDiscovery"/> confirms the host has the mod, then says
+/// Hello and mirrors whatever state arrives. It sends nothing over Mirror before that: a vanilla
+/// host's Mirror disconnects any client that sends it a message id it does not know.
 ///
 /// The host is also a client of itself (Mirror host mode), but it never sends itself
 /// messages: it applies its own state directly.
@@ -18,6 +21,9 @@ namespace BigScreen.Net;
 internal sealed class SyncSession
 {
     public SyncState State { get; private set; } = new SyncState();
+
+    /// <summary>Whether the host has the mod. Guests must not send over Mirror until it says so.</summary>
+    public HostDiscovery Discovery { get; } = new HostDiscovery();
 
     /// <summary>Raised whenever State changes, on host (local edits) and client (received).</summary>
     public event Action<SyncState> StateChanged;
@@ -38,6 +44,9 @@ internal sealed class SyncSession
     public int ModdedPeerCount => _moddedPeers.Count;
     public bool HelloSent => _helloSent;
 
+    /// <summary>Guest: safe to send over Mirror, because the host is known to have the mod.</summary>
+    public bool MaySendToHost => Discovery.HostHasMod || Plugin.AssumeHostHasMod.Value;
+
     public void Tick()
     {
         if (!_subscribed)
@@ -55,6 +64,8 @@ internal sealed class SyncSession
             _nextRegisterCheck = Time.unscaledTime + 1f;
             MirrorChannel.EnsureRegistered();
         }
+
+        Discovery.Tick(IsHost);
 
         if (IsHost)
         {
@@ -79,10 +90,11 @@ internal sealed class SyncSession
                 Broadcast();
             }
         }
-        else if (NetworkClient.isConnected && NetworkClient.ready && !_helloSent)
+        else if (NetworkClient.isConnected && NetworkClient.ready && !_helloSent && MaySendToHost)
         {
             // Hello once we are "ready" (scene loaded, player spawned) so the host's reply
-            // lands in a client that can act on it.
+            // lands in a client that can act on it, and only once we know the host has the
+            // mod. Greeting a vanilla host gets this client disconnected mid-join.
             if (MirrorChannel.SendToServer(w => Protocol.WriteHello(w, Plugin.Version)))
             {
                 _helloSent = true;
@@ -96,6 +108,7 @@ internal sealed class SyncSession
         _moddedPeers.Clear();
         _helloSent = false;
         _nextHeartbeat = 0f;
+        Discovery.Reset();
         State = new SyncState();
         MirrorChannel.Reset();
     }
@@ -121,6 +134,8 @@ internal sealed class SyncSession
     public bool SendRequest(Request req)
     {
         if (IsHost) return false;
+        // Same rule as Hello: never send to a host that has not proven it has the mod.
+        if (!_helloSent) return false;
         return MirrorChannel.SendToServer(w => Protocol.WriteRequest(w, req));
     }
 
